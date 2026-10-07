@@ -1,0 +1,47 @@
+{
+  "name": "contract-atlas",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "dev:api": "node --import tsx scripts/dev-api.ts",
+    "build": "npm run build:free",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "collect": "node --import tsx scripts/collect.ts",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "preview": "wrangler dev --port 8787",
+    "build:free": "node --import tsx scripts/init-free.ts && vite build",
+    "collect:free": "node --import tsx scripts/refresh-free.ts",
+    "verify:free": "node --import tsx scripts/verify-free.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.104.0",
+    "cheerio": "1.2.0",
+    "drizzle-orm": "0.45.3",
+    "hono": "4.13.12",
+    "lucide-react": "1.49.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260930.2",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.6.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "esbuild": "0.28.2",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.1",
+    "vitest": "5.0.3",
+    "wrangler": "4.145.0"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

@@ -1,0 +1,49 @@
+name: Refresh Contract Atlas
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: contract-atlas-refresh
+  cancel-in-progress: false
+jobs:
+  collect-and-publish:
+    # Standard Linux runner in a PUBLIC repository; no paid/larger runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Verify public repository and free deployment scope
+        env:
+          PUBLIC_REPOSITORY: ${{ github.event.repository.private == false }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          test "$PUBLIC_REPOSITORY" = true
+          node scripts/assert-hobby.mjs
+      - run: npm ci
+      - name: Refresh persisted snapshot
+        run: npm run collect:free
+      - name: Check the snapshot
+        run: npm run verify:free
+      - name: Save real job data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/atlas.sqlite
+          if ! git diff --cached --quiet; then
+            git commit -m "Refresh public contract-role snapshot"
+            git push
+          fi
+      - name: Publish to Vercel Hobby
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel deploy --prod --yes --token "$VERCEL_TOKEN"
