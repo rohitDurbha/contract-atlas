@@ -23,7 +23,7 @@ export async function startRun(db:D1Database):Promise<Run & {processed:number}> 
 }
 async function boundedCollect(index:number,now:string):Promise<Collection> {
   let timer:ReturnType<typeof setTimeout>;
-  const deadline=new Promise<Collection>(resolve=> {timer=setTimeout(()=>resolve({jobs:[],status:'error',message:'Source collection timed out; previous listings were retained.',complete:false}),22_000);});
+  const deadline=new Promise<Collection>(resolve=> {timer=setTimeout(()=>resolve({jobs:[],status:'error',message:'Source collection timed out; previous listings were retained.',complete:false}),120_000);});
   try {return await Promise.race([collectSource(SOURCES[index],now),deadline]);} finally {clearTimeout(timer!);}
 }
 export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:number}> {
@@ -31,7 +31,7 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
   if(!row) throw new Error('Refresh run not found.');
   if(row.status!=='running') return formatRun(row);
   const owner=crypto.randomUUID();
-  if(!await lease(db,`step:${id}`,owner,90)) return formatRun(row);
+  if(!await lease(db,`step:${id}`,owner,150)) return formatRun(row);
   try {
     const now=new Date().toISOString(),batch=SOURCES.slice(row.cursor,row.cursor+1);
     const results=await Promise.all(batch.map((_,i)=>boundedCollect(row.cursor+i,now)));
@@ -39,8 +39,16 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
     for(let i=0;i<batch.length;i++) {
       const source=batch[i],result=results[i];
       if(result.status==='healthy') success++;
-      const existing=await db.prepare('SELECT id FROM jobs WHERE source_id=?').bind(source.id).all<{id:string}>();
+      const existing=await db.prepare('SELECT id,data FROM jobs WHERE source_id=?').bind(source.id).all<{id:string;data:string}>();
       const known=new Set(existing.results.map(j=>j.id));
+      const previous=new Map(existing.results.map(j=>[j.id,JSON.parse(j.data)]));
+      // A full listing card need not expose every detail field. Keep previously
+      // collected descriptions rather than replacing them with blank strings.
+      for(const job of result.jobs) {
+        const prior=previous.get(job.id);
+        if(prior && !job.description)job.description=prior.description || '';
+      }
+      if(result.retireExisting)await db.prepare('UPDATE jobs SET active=0 WHERE source_id=?').bind(source.id).run();
       newCount+=result.jobs.filter(j=>!known.has(j.id)).length;
       jobCount+=result.jobs.length;
       for(let offset=0;offset<result.jobs.length;offset+=25) await db.batch(result.jobs.slice(offset,offset+25).map(j=>jobStatement(db,j)));
