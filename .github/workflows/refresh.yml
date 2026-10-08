@@ -11,11 +11,16 @@ concurrency:
 jobs:
   collect-and-publish:
     # Standard Linux runner in a PUBLIC repository; no paid/larger runners.
+    if: github.ref == 'refs/heads/main'
+    env:
+      # Public project identifiers; only VERCEL_TOKEN is a credential.
+      VERCEL_ORG_ID: team_Q3tFZbZwOv0nEhb9j6ptDpzP
+      VERCEL_PROJECT_ID: prj_zGEobLETVmIkdYC702Ae84o2gpzE
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           package-manager-cache: false
@@ -23,7 +28,6 @@ jobs:
         env:
           PUBLIC_REPOSITORY: ${{ github.event.repository.private == false }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           test "$PUBLIC_REPOSITORY" = true
           node scripts/assert-hobby.mjs
@@ -44,6 +48,4 @@ jobs:
       - name: Publish to Vercel Hobby
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: npx --yes vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+        run: npx --yes vercel@63.1.0 deploy --prod --yes
