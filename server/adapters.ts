@@ -1,6 +1,7 @@
 import { load } from 'cheerio/slim';
 import type { Job, Source } from '../src/types.js';
 import type { SourceConfig } from './sources.js';
+import { magnitFeed, randstadFeed, opptlyFeed } from './public-feeds.js';
 import { date, makeJob, money, plainText, safeUrl, workMode } from './normalize.js';
 
 type RecordData = Record<string, any>;
@@ -10,13 +11,14 @@ export interface Collection {
   message: string;
   complete: boolean;
   advertisedCount?: number;
+  retireExisting?: boolean;
 }
 export class FetchError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
-export async function fetchPublic(url: string, headers: Record<string,string> = {}): Promise<string> {
+export async function fetchPublic(url: string, headers: Record<string,string> = {}, body?: unknown): Promise<string> {
   for (let attempt=0; attempt<2; attempt++) {
-    const response = await fetch(url, { headers: { 'User-Agent': 'ContractAtlas/1.0 (public contract job aggregator)', 'Accept': 'application/json,text/html;q=0.9', ...headers }, signal: AbortSignal.timeout(9000), redirect: 'follow' });
+    const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', body: body === undefined ? undefined : JSON.stringify(body), headers: { 'User-Agent': 'ContractAtlas/1.0 (public contract job aggregator)', 'Accept': 'application/json,text/html;q=0.9', ...(body === undefined ? {} : {'Content-Type':'application/json'}), ...headers }, signal: AbortSignal.timeout(9000), redirect: 'follow' });
     if (response.ok) {
       const body = await response.text();
       if (body.length > 8_000_000) throw new Error('Response exceeded the collection size limit.');
@@ -89,15 +91,22 @@ async function hireHQ(source: SourceConfig, html: string, now: string): Promise<
   if (!domain) return generic(source,html,now);
   const enriched={...source,domain};
   if (!hireMetadata) hireMetadata=JSON.parse(await fetchPublic('https://services.hirehq.ai/ats/api/v1/status/metadata')).metadata;
-  let jobs:Job[]=[],complete=false;
+  let jobs:Job[]=[],complete=false,received=0,total:number|undefined;
+  const seen=new Set<string>();
   for (let page=1;page<=30;page++) {
     const data=JSON.parse(await fetchPublic(`https://services.hirehq.ai/ats/api/v1/public/jobs/domain?validDomainName=${encodeURIComponent(domain)}&limit=100&page=${page}`));
     const rows=data.jobs;
     if (!Array.isArray(rows)) throw new Error('The source returned an unexpected job response.');
+    if(rows.some((r:RecordData)=>!r.job_id || seen.has(String(r.job_id))))break;
+    rows.forEach((r:RecordData)=>seen.add(String(r.job_id)));
+    received+=rows.length;
+    const count=Number(data.count);
+    if(Number.isInteger(count)&&count>=0)total=count;
     jobs.push(...parseHireHQ(enriched,rows,now,hireMetadata!));
-    if (rows.length<100 || page*100 >= Number(data.count)) { complete=true; break; }
+    if(total!==undefined && received>=total) { complete=seen.size===total; break; }
+    if(!rows.length) {complete=total===undefined;break;}
   }
-  return {jobs:unique(jobs),complete,status:'healthy',message:`Public API collected ${jobs.length} contract roles${complete?'':'; pagination limit reached'}.`};
+  return {jobs:unique(jobs),complete,advertisedCount:total,status:'healthy',message:`Public API collected ${jobs.length} contract roles; ${received} listing records retrieved${total===undefined?'':` of ${total} advertised`}${complete?' across all pages':'; full coverage has not been verified'}.`};
 }
 
 function eligibleTalentNet(r:RecordData):boolean {
@@ -223,6 +232,9 @@ export async function collectSource(source: SourceConfig, now = new Date().toISO
     await checkRobots(source);
     const html=await fetchPublic(source.url);
     if (source.provider==='KellyOCG') return await hireHQ(source,html,now);
+    if (source.provider==='Magnit') return await magnitFeed(source,html,now,fetchPublic);
+    if (source.provider==='Randstad') return await randstadFeed(source,html,now,fetchPublic,checkRobots);
+    if (source.provider==='Raise') return await opptlyFeed(source,html,now,fetchPublic,checkRobots);
     return await generic(source,html,now);
   } catch (error) {
     const blocked=error instanceof FetchError && [401,403,429].includes(error.status);
