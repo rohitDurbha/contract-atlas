@@ -53,7 +53,7 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
       jobCount+=result.jobs.length;
       for(let offset=0;offset<result.jobs.length;offset+=25) await db.batch(result.jobs.slice(offset,offset+25).map(j=>jobStatement(db,j)));
       await db.prepare('UPDATE sources SET status=?,last_checked_at=?,last_success_at=CASE WHEN ?=\'healthy\' THEN ? ELSE last_success_at END,message=? WHERE id=?').bind(result.status,now,result.status,now,result.message,source.id).run();
-      await db.prepare('INSERT INTO source_coverage(source_id,complete,advertised_count,fetched_count,checked_at) VALUES(?,?,?,?,?) ON CONFLICT(source_id) DO UPDATE SET complete=excluded.complete,advertised_count=excluded.advertised_count,fetched_count=excluded.fetched_count,checked_at=excluded.checked_at').bind(source.id,result.complete&&result.status==='healthy'?1:0,result.advertisedCount??null,result.jobs.length,now).run();
+      await db.prepare('INSERT INTO source_coverage(source_id,complete,advertised_count,fetched_count,checked_at) VALUES(?,?,?,?,?) ON CONFLICT(source_id) DO UPDATE SET complete=excluded.complete,advertised_count=excluded.advertised_count,fetched_count=excluded.fetched_count,checked_at=excluded.checked_at').bind(source.id,result.complete&&result.status==='healthy'?1:0,result.advertisedCount??null,result.retrievedCount??result.jobs.length,now).run();
       if(result.complete && result.status==='healthy') {
         const cutoff=new Date(Date.now()-48*3_600_000).toISOString();
         await db.prepare('UPDATE jobs SET active=0 WHERE source_id=? AND last_seen_at<?').bind(source.id,cutoff).run();
