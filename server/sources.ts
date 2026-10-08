@@ -1,4 +1,4 @@
-export type Provider = 'TalentNet' | 'Magnit' | 'KellyOCG' | 'Randstad' | 'LiveHire' | 'Raise';
+export type Provider = 'TalentNet' | 'Magnit' | 'KellyOCG' | 'Randstad' | 'LiveHire' | 'Raise' | 'Staffing Future' | 'Matador';
 export interface SourceConfig {
   id: string;
   company: string;
@@ -57,4 +57,6 @@ export const SOURCES: SourceConfig[] = [
   source('epiq','Epiq','Raise','https://epiqcontingent.jobs/'),
   source('applied','Applied Materials','Raise','https://appliedcontract.jobs/'),
   source('lyft','Lyft','Raise','https://raise.jobs/lyft/'),
+  source('inspyr','INSPYR Solutions','Staffing Future','https://www.inspyrsolutions.com/job-search/','US',undefined,false),
+  source('tundra','Tundra Technical Solutions','Matador','https://community.tundratechnical.ca/jobs/','Global',undefined,false),
 ];

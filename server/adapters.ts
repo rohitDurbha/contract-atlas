@@ -1,3 +1,4 @@
+import { inspyrFeed, tundraFeed } from './staffing-feeds.js';
 import { load } from 'cheerio/slim';
 import type { Job, Source } from '../src/types.js';
 import type { SourceConfig } from './sources.js';
@@ -231,7 +232,12 @@ export async function collectSource(source: SourceConfig, now = new Date().toISO
       return await talentNet(source,await fetchPublic(landing.url),now);
     }
     await checkRobots(source);
-    const html=await fetchPublic(source.url);
+    if (source.id==='tundra') {
+      await checkRobots({...source,url:new URL('/wp-json/wp/v2/matador-job-listings',source.url).href});
+      return await tundraFeed(source,now,fetchPublic);
+    }
+    const html=await fetchPublic(source.id==='inspyr'?`${source.url}?_paged=1`:source.url);
+    if (source.id==='inspyr') return await inspyrFeed(source,html,now,fetchPublic);
     if (source.provider==='KellyOCG') return await hireHQ(source,html,now);
     if (source.provider==='Magnit') return await magnitFeed(source,html,now,fetchPublic);
     if (source.provider==='Randstad') return await randstadFeed(source,html,now,fetchPublic,checkRobots);

@@ -55,6 +55,7 @@ export function makeJob(source: SourceConfig, input: Partial<Job> & { sourceJobI
     location: input.location?.trim() || 'Location not specified',
     country: input.country || source.country,
     workMode: input.workMode || 'Unspecified',
+    employmentType: plainText(input.employmentType) || 'Contract',
     category: classify(title, input.category),
     description,
     skills: input.skills?.length ? input.skills.slice(0,10) : deriveSkills(description),

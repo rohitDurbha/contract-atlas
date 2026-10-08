@@ -23,7 +23,7 @@ export async function startRun(db:D1Database):Promise<Run & {processed:number}> 
 }
 async function boundedCollect(index:number,now:string):Promise<Collection> {
   let timer:ReturnType<typeof setTimeout>;
-  const deadline=new Promise<Collection>(resolve=> {timer=setTimeout(()=>resolve({jobs:[],status:'error',message:'Source collection timed out; previous listings were retained.',complete:false}),120_000);});
+  const deadline=new Promise<Collection>(resolve=> {timer=setTimeout(()=>resolve({jobs:[],status:'error',message:'Source collection timed out; previous listings were retained.',complete:false}),SOURCES[index].id==='inspyr'?240_000:120_000);});
   try {return await Promise.race([collectSource(SOURCES[index],now),deadline]);} finally {clearTimeout(timer!);}
 }
 export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:number}> {
@@ -31,7 +31,7 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
   if(!row) throw new Error('Refresh run not found.');
   if(row.status!=='running') return formatRun(row);
   const owner=crypto.randomUUID();
-  if(!await lease(db,`step:${id}`,owner,150)) return formatRun(row);
+  if(!await lease(db,`step:${id}`,owner,270)) return formatRun(row);
   try {
     const now=new Date().toISOString(),batch=SOURCES.slice(row.cursor,row.cursor+1);
     const results=await Promise.all(batch.map((_,i)=>boundedCollect(row.cursor+i,now)));
