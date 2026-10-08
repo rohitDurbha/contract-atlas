@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
-import { openSQLite } from '../server/sqlite';
-import { freeFetch } from '../server/free-runtime';
+import { openSQLite } from '../server/sqlite.js';
+import { freeFetch } from '../server/free-runtime.js';
 const {db}=openSQLite(resolve(process.cwd(),'data/atlas.sqlite'),true);
 const fetcher=freeFetch(db);
 export default {fetch(request:Request) {
