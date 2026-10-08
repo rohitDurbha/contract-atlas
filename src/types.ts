@@ -7,6 +7,7 @@ export interface Job {
   location: string;
   country: string;
   workMode: 'Remote' | 'Hybrid' | 'On-site' | 'Unspecified';
+  employmentType?: string;
   category: string;
   description: string;
   skills: string[];
