@@ -1,6 +1,6 @@
 import { load } from 'cheerio/slim';
-import type { Job } from '../src/types';
-import type { SourceConfig } from './sources';
+import type { Job } from '../src/types.js';
+import type { SourceConfig } from './sources.js';
 
 export function plainText(value: unknown): string {
   if (typeof value !== 'string') return '';

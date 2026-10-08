@@ -1,9 +1,9 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { and, eq, like, or, sql, desc, inArray } from 'drizzle-orm';
-import * as schema from './schema';
-import { SOURCES } from './sources';
-import seed from './seed.json';
-import type { Job, Feed } from '../src/types';
+import * as schema from './schema.js';
+import { SOURCES } from './sources.js';
+import seed from './seed.json' with { type: 'json' };
+import type { Job, Feed } from '../src/types.js';
 
 const DDL = [
   'CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY,company TEXT NOT NULL,provider TEXT NOT NULL,url TEXT NOT NULL,country TEXT NOT NULL,status TEXT NOT NULL DEFAULT \'pending\',last_checked_at TEXT,last_success_at TEXT,message TEXT)',

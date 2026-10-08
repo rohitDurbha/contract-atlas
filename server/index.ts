@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
-import { ensureDB, hydrate, jobFeed } from './db';
-import { formatRun, startRun, stepRun, runScheduled } from './ingestion';
-import type { Overview, Source } from '../src/types';
+import { ensureDB, hydrate, jobFeed } from './db.js';
+import { formatRun, startRun, stepRun, runScheduled } from './ingestion.js';
+import type { Overview, Source } from '../src/types.js';
 
 type Bindings={DB:D1Database;ASSETS:Fetcher};
 const app=new Hono<{Bindings:Bindings}>();

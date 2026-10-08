@@ -1,7 +1,7 @@
 import { load } from 'cheerio/slim';
-import type { Job, Source } from '../src/types';
-import type { SourceConfig } from './sources';
-import { date, makeJob, money, plainText, safeUrl, workMode } from './normalize';
+import type { Job, Source } from '../src/types.js';
+import type { SourceConfig } from './sources.js';
+import { date, makeJob, money, plainText, safeUrl, workMode } from './normalize.js';
 
 type RecordData = Record<string, any>;
 export interface Collection {

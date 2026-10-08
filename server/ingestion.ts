@@ -1,7 +1,7 @@
-import { SOURCES } from './sources';
-import { collectSource, type Collection } from './adapters';
-import { jobStatement } from './db';
-import type { Run } from '../src/types';
+import { SOURCES } from './sources.js';
+import { collectSource, type Collection } from './adapters.js';
+import { jobStatement } from './db.js';
+import type { Run } from '../src/types.js';
 
 type RunRow = {id:string;status:Run['status'];started_at:string;completed_at:string|null;source_count:number;success_count:number;new_count:number;job_count:number;cursor:number};
 export function formatRun(row:RunRow): Run & { processed: number } {

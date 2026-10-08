@@ -1,4 +1,4 @@
-import worker from './index';
+import worker from './index.js';
 const ctx={waitUntil(){},passThroughOnException(){},props:{}} as unknown as ExecutionContext;
 export function freeFetch(db:D1Database) {
   return async(request:Request)=>{
