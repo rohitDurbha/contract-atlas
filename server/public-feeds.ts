@@ -8,9 +8,9 @@ type Row = Record<string, any>;
 type Reader = (url:string, headers?:Record<string,string>, body?:unknown)=>Promise<string>;
 type Robots = (source:SourceConfig)=>Promise<void>;
 const unique = (jobs:Job[])=>[...new Map(jobs.map(j=>[j.id,j])).values()];
-function result(jobs:Job[],complete:boolean,label:string,advertisedCount?:number):Collection {
+function result(jobs:Job[],complete:boolean,label:string,advertisedCount?:number,retrievedCount?:number):Collection {
   jobs=unique(jobs);
-  return {jobs,complete,status:'healthy',advertisedCount,message:`${label}: collected ${jobs.length} active contract roles${advertisedCount===undefined?'':`; ${advertisedCount} records advertised`}. ${complete?'All listing pages verified.':'Full coverage could not be verified; previous listings retained.'}`};
+  return {jobs,complete,status:'healthy',advertisedCount,retrievedCount,message:`${label}: collected ${jobs.length} active contract roles${advertisedCount===undefined?'':`; ${advertisedCount} records advertised`}. ${complete?'All listing pages verified.':'Full coverage could not be verified; previous listings retained.'}`};
 }
 
 // Magnit/WillHire renders listing cards with a count, including cards whose
@@ -100,19 +100,19 @@ export async function randstadFeed(source:SourceConfig,html:string,now:string,re
       const query=source.id==='aviva'?'status = ACTIVE AND ( worker_pay_types = "Contingent opportunity" )':'status = ACTIVE';
       const data=JSON.parse(await read(u.href,{}, {filters:[],query,size:100,offset,sort:[{name:'public_sort_order',dir:'asc'},{name:'created',dir:'desc'}]}));
       if(!Array.isArray(data.results)||!Number.isInteger(data.totalResults)||data.totalResults<0)throw new Error('Unexpected Randstad public search response.');
-      if(total!==undefined && data.totalResults!==total)return result(jobs,false,'Randstad public API',data.totalResults);
+      if(total!==undefined && data.totalResults!==total)return result(jobs,false,'Randstad public API',data.totalResults,seen.size);
       total=data.totalResults;
       const rows:Row[]=data.results;
-      if(rows.some(r=>!r.id || seen.has(String(r.id))))return result(jobs,false,'Randstad public API',total);
+      if(rows.some(r=>!r.id || seen.has(String(r.id))))return result(jobs,false,'Randstad public API',total,seen.size);
       rows.forEach(r=>seen.add(String(r.id)));offset+=rows.length;
       const parsed=parseRandstad(source,rows,now);
       invalid ||= parsed.length!==rows.filter(r=>eligibleRandstad(source,r)).length;
       jobs.push(...parsed);
-      if(offset>=data.totalResults)return result(jobs,!invalid && seen.size===data.totalResults,'Randstad public API',total);
+      if(offset>=data.totalResults)return result(jobs,!invalid && seen.size===data.totalResults,'Randstad public API',total,seen.size);
       if(!rows.length)break;
     }
   } catch(error) {if(!jobs.length)throw error;}
-  return result(jobs,false,'Randstad public API',total);
+  return result(jobs,false,'Randstad public API',total,seen.size);
 }
 
 export function parseOpptly(source:SourceConfig,rows:Row[],portal:string,now:string):Job[] {
