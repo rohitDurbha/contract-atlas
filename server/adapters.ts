@@ -11,6 +11,7 @@ export interface Collection {
   message: string;
   complete: boolean;
   advertisedCount?: number;
+  retrievedCount?: number;
   retireExisting?: boolean;
 }
 export class FetchError extends Error {
@@ -106,7 +107,7 @@ async function hireHQ(source: SourceConfig, html: string, now: string): Promise<
     if(total!==undefined && received>=total) { complete=seen.size===total; break; }
     if(!rows.length) {complete=total===undefined;break;}
   }
-  return {jobs:unique(jobs),complete,advertisedCount:total,status:'healthy',message:`Public API collected ${jobs.length} contract roles; ${received} listing records retrieved${total===undefined?'':` of ${total} advertised`}${complete?' across all pages':'; full coverage has not been verified'}.`};
+  return {jobs:unique(jobs),complete,advertisedCount:total,retrievedCount:seen.size,status:'healthy',message:`Public API collected ${jobs.length} contract roles; ${received} listing records retrieved${total===undefined?'':` of ${total} advertised`}${complete?' across all pages':'; full coverage has not been verified'}.`};
 }
 
 function eligibleTalentNet(r:RecordData):boolean {
@@ -167,7 +168,7 @@ async function talentNet(source: SourceConfig, html: string, now: string): Promi
   }
   complete=complete && !malformed && (advertisedCount===undefined || seenIds.size>=advertisedCount);
   jobs=unique(jobs);
-  return {jobs,complete,advertisedCount,status:'healthy',message:`Public listing API collected ${jobs.length} contract roles across all ${complete?'available':'retrieved'} pages${advertisedCount!==undefined?`; ${advertisedCount} records advertised`:''}${complete?'':'; full coverage has not been verified'}.`};
+  return {jobs,complete,advertisedCount,retrievedCount:seenIds.size,status:'healthy',message:`Public listing API collected ${jobs.length} contract roles across all ${complete?'available':'retrieved'} pages${advertisedCount!==undefined?`; ${advertisedCount} records advertised`:''}${complete?'':'; full coverage has not been verified'}.`};
 }
 
 export function parseJSONLD(source: SourceConfig, html: string, now: string): Job[] {
