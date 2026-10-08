@@ -28,7 +28,7 @@ describe('source normalization',()=> {
   it('does not turn missing compensation into a zero-dollar offer',()=>{expect(money(null)).toBeNull();expect(money('0')).toBeNull();expect(money('72.50')).toBe(72.5);expect(date('not a date')).toBeNull();expect(safeUrl('http://example.com','https://example.com')).toBeNull();});
 });
 describe('collection boundaries',()=> {
-  it('registers all 59 portals once',()=>{expect(SOURCES).toHaveLength(59);expect(new Set(SOURCES.map(s=>s.id)).size).toBe(59);expect(SOURCES.every(s=>s.url.startsWith('https://'))).toBe(true);});
+  it('registers all 61 portals once',()=>{expect(SOURCES).toHaveLength(61);expect(new Set(SOURCES.map(s=>s.id)).size).toBe(61);expect(SOURCES.every(s=>s.url.startsWith('https://'))).toBe(true);});
   it('uses the longest robots rule, allowing exceptions and specific agents',()=> {
     const robots='User-agent: *\nDisallow: /jobs\nAllow: /jobs/public\n\nUser-agent: ContractAtlas\nDisallow: /private';
     expect(robotsAllowed(robots,'/jobs')).toBe(true);

@@ -25,7 +25,7 @@ describe('free standalone snapshot',()=>{
       const before=await readFile(path),reader=openSQLite(path,true),fetcher=freeFetch(reader.db);
       try {
         for(const route of ['/api/overview','/api/sources','/api/jobs?q=Data%20Labeling%20Analyst','/api/jobs?page=2','/api/jobs?sort=pay','/api/runs'])expect((await fetcher(new Request('https://atlas.test'+route))).status).toBe(200);
-        const sources=await (await fetcher(new Request('https://atlas.test/api/sources'))).json() as any[];expect(sources.length).toBe(59);
+        const sources=await (await fetcher(new Request('https://atlas.test/api/sources'))).json() as any[];expect(sources.length).toBe(61);
         const roles=await (await fetcher(new Request('https://atlas.test/api/jobs?q=Data%20Labeling%20Analyst'))).json() as any;expect(roles.total).toBeGreaterThan(0);
         const access=await (await fetcher(new Request('https://atlas.test/api/access'))).json();expect(access).toEqual({canRefresh:false});
         expect((await fetcher(new Request('https://atlas.test/api/refresh',{method:'POST'}))).status).toBe(405);
@@ -39,7 +39,7 @@ describe('free standalone snapshot',()=>{
       await ensureDB(db);
       const before=await db.prepare("SELECT last_success_at FROM sources WHERE id='meta'").first<any>();
       const count=await db.prepare("SELECT count(*) AS n FROM jobs WHERE source_id='meta' AND active=1").first<any>();
-      const run=await runScheduled(db);expect(run.status).toBe('partial');expect(run.sourceCount).toBe(59);expect(run.successCount).toBe(58);
+      const run=await runScheduled(db);expect(run.status).toBe('partial');expect(run.sourceCount).toBe(61);expect(run.successCount).toBe(60);
       const after=await db.prepare("SELECT status,last_success_at FROM sources WHERE id='meta'").first<any>();
       expect(after.status).toBe('blocked');expect(after.last_success_at).toBe(before.last_success_at);
       expect((await db.prepare("SELECT count(*) AS n FROM jobs WHERE source_id='meta' AND active=1").first<any>()).n).toBe(count.n);

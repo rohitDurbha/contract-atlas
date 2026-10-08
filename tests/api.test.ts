@@ -42,7 +42,7 @@ describe('database-backed API',()=> {
   });
   it('blocks cross-origin writes and exposes original source health',async()=> {
     const db=sqliteD1();const bad=await request(db,'/api/refresh',{method:'POST',headers:{Origin:'https://untrusted.example'}});expect(bad.status).toBe(403);
-    const response=await request(db,'/api/sources');const sources=await response.json() as any[];expect(sources).toHaveLength(59);expect(sources.every(s=>typeof s.status==='string')).toBe(true);
+    const response=await request(db,'/api/sources');const sources=await response.json() as any[];expect(sources).toHaveLength(61);expect(sources.every(s=>typeof s.status==='string')).toBe(true);
   });
   it('distinguishes fully retrieved feeds from readable but partial feeds',async()=>{
     const db=sqliteD1();await ensureDB(db);
