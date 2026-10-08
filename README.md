@@ -2,7 +2,7 @@
 
 A responsive contract-job feed with search, filters, saved roles, source health, and collection history. This release uses Vercel Hobby, a public GitHub repository, GitHub Actions, and a bundled SQLite database. It requires no paid database, paid hosting plan, GPT subscription, AI scraping agents, or purchased domain.
 
-Deployment instructions: [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md). This package is prepared and tested; a new public deployment is still pending account access.
+Deployment instructions: [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md). The public deployment is live at https://contract-atlas-amber.vercel.app/. Scheduled refreshes remain pending the `VERCEL_TOKEN` GitHub Actions secret and verification of the first successful run.
 
 ## Architecture
 

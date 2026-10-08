@@ -13,14 +13,8 @@ Official references: [GitHub Actions billing](https://docs.github.com/en/billing
 
 1. Create a public GitHub repository and upload this release ZIP's contents, including `.github/workflows/refresh.yml` and `data/atlas.sqlite`. The workflow must be on the default branch. The ZIP excludes the old Sites hosting manifest and credentials.
 2. In a Vercel **Hobby** scope, import the public repository as a project. Use Node.js 24 and the included `vercel.json`. Decline upgrades and paid resources. An initial import can publish the bootstrap snapshot; it does not mean scheduled collection is running yet.
-3. Find `projectId` and `orgId` in Vercel project settings or using local `vercel link`. The organization must be a `team_…` scope with `billing.plan=hobby`; the workflow fails closed if it cannot verify this. Do not commit `.vercel/project.json`.
-4. Create a Vercel token for that Hobby scope. Save these **GitHub Actions repository secrets**, not files, URLs, frontend values, or public repository variables:
-
-   | Secret | Value |
-   | --- | --- |
-   | `VERCEL_TOKEN` | Token with access to the Hobby project |
-   | `VERCEL_ORG_ID` | Matching Hobby scope's `team_…` ID |
-   | `VERCEL_PROJECT_ID` | Imported project's `prj_…` ID |
+3. The workflow is linked to the verified `contract-atlas` project in `rohitdurbha-1631` through public project and team identifiers. To deploy a different copy, update those identifiers in the workflow. The organization must be a `team_…` scope with `billing.plan=hobby`; the workflow fails closed if it cannot verify this.
+4. Create a Vercel token scoped to `rohitdurbha-1631`. Save it directly as the **GitHub Actions repository secret `VERCEL_TOKEN`**. Never paste the token into chat, files, URLs, frontend values, or public repository variables. Project and team IDs are already configured and are not credentials.
 
 5. Allow GitHub Actions to write repository contents so it can commit the snapshot. Keep the standard `ubuntu-latest` runner, without paid runners, caches, or artifacts.
 6. Select **Actions → Refresh Contract Atlas → Run workflow**. It checks public visibility and the Hobby plan, collects sources, verifies the database, commits it, and deploys. Blocked sources preserve earlier listings. Wholly failed ingestion or failed verification stops publishing.
@@ -43,4 +37,4 @@ Code and public job snapshots are public by choice. Snapshots contain postings a
 
 ## Current release status
 
-Prepared locally and tested. Public deployment and account-level Hobby verification remain pending GitHub and Vercel access. No paid resource is requested. The original deployment is retained until migration is verified.
+Public deployment verified on October 8, 2026 at https://contract-atlas-amber.vercel.app/. The anonymous API returns 654 active listings, 59 sources, and 40 Data Labeling Analyst matches from the October 1 snapshot. Vercel settings confirm Hobby. Scheduled collection is pending the `VERCEL_TOKEN` repository secret and its first successful Actions run. No paid resource is requested. The original deployment is retained until migration is verified.
