@@ -54,7 +54,8 @@ export function hydrate(row: { data: string; first_seen_at?: string; last_seen_a
 }
 export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed> {
   const orm=drizzle(db),j=schema.jobs;
-  const filters=[eq(j.active,1)];
+  const active=and(eq(j.active,1),inArray(j.sourceId,SOURCES.map(s=>s.id)));
+  const filters=[active];
   const query=p.get('q')?.trim().slice(0,150);
   if (query) { const term=`%${query.replace(/[\\%_]/g,'\\$&')}%`; filters.push(sql`(${j.title} LIKE ${term} ESCAPE '\\' OR ${j.company} LIKE ${term} ESCAPE '\\' OR ${j.location} LIKE ${term} ESCAPE '\\' OR ${j.data} LIKE ${term} ESCAPE '\\')`); }
   if (p.get('location')) filters.push(like(j.location,`%${p.get('location')!.slice(0,100)}%`));
@@ -77,9 +78,9 @@ export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed>
   const order=p.get('sort')==='company'?[j.company,desc(j.postedAt)]:p.get('sort')==='pay'?[desc(j.payMax),desc(j.payMin)]:p.get('sort')==='discovered'?[desc(j.firstSeenAt)]:[desc(j.postedAt),desc(j.firstSeenAt)];
   const rows=await orm.select().from(j).where(where).orderBy(...order).limit(limit).offset((page-1)*limit);
   const [companies,categories,countries]=await Promise.all([
-    orm.select({name:j.company,count:sql<number>`count(*)`}).from(j).where(eq(j.active,1)).groupBy(j.company).orderBy(j.company),
-    orm.select({name:j.category,count:sql<number>`count(*)`}).from(j).where(eq(j.active,1)).groupBy(j.category).orderBy(j.category),
-    orm.select({country:j.country}).from(j).where(eq(j.active,1)).groupBy(j.country).orderBy(j.country),
+    orm.select({name:j.company,count:sql<number>`count(*)`}).from(j).where(active).groupBy(j.company).orderBy(j.company),
+    orm.select({name:j.category,count:sql<number>`count(*)`}).from(j).where(active).groupBy(j.category).orderBy(j.category),
+    orm.select({country:j.country}).from(j).where(active).groupBy(j.country).orderBy(j.country),
   ]);
   return {jobs:rows.map(hydrate),total,page,pages,facets:{companies,categories,countries:countries.map(r=>r.country)}};
 }

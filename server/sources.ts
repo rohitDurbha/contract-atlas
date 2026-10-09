@@ -49,10 +49,6 @@ export const SOURCES: SourceConfig[] = [
   source('nestle','Nestlé','Randstad','https://nestle.talent-community.com/','Global'),
   source('aviva','Aviva','Randstad','https://aviva.talent-community.com/contractor-roles','UK'),
   source('lonza','Lonza','Randstad','https://lonza.talent-community.com/','Global',undefined,false),
-  source('nikeinc','Nike','LiveHire','https://www.livehire.com/careers/nikeinc/jobs'),
-  source('abbott','Abbott','LiveHire','https://www.livehire.com/careers/abbott/jobs'),
-  source('halliburton','Halliburton','LiveHire','https://www.livehire.com/careers/halliburton/jobs'),
-  source('adm','ADM','LiveHire','https://www.livehire.com/careers/adm/jobs'),
   source('enbridge','Enbridge','Raise','https://enbridge.raise.jobs/','North America'),
   source('epiq','Epiq','Raise','https://epiqcontingent.jobs/'),
   source('applied','Applied Materials','Raise','https://appliedcontract.jobs/'),
@@ -60,3 +56,6 @@ export const SOURCES: SourceConfig[] = [
   source('inspyr','INSPYR Solutions','Staffing Future','https://www.inspyrsolutions.com/job-search/','US',undefined,false),
   source('tundra','Tundra Technical Solutions','Matador','https://community.tundratechnical.ca/jobs/','Global',undefined,false),
 ];
+
+// Archived after repeated access restrictions; retained only in historical records.
+export const RETIRED_SOURCE_IDS = ['adm','abbott','halliburton','nikeinc'];

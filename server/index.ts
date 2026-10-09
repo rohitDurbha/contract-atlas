@@ -1,3 +1,5 @@
+import { RETIRED_SOURCE_IDS } from './sources.js';
+const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
@@ -22,19 +24,19 @@ app.get('/api/access',c=>c.json({canRefresh:true}));
 app.get('/api/health',c=>c.json({ok:true,service:'contract-atlas',timestamp:new Date().toISOString()}));
 app.get('/api/jobs',async c=>c.json(await jobFeed(c.env.DB,new URL(c.req.url).searchParams)));
 app.get('/api/jobs/:id',async c=> {
-  const row=await c.env.DB.prepare('SELECT * FROM jobs WHERE id=?').bind(c.req.param('id')).first();
+  const row=await c.env.DB.prepare(`SELECT * FROM jobs WHERE id=? AND source_id NOT IN (${retiredSql})`).bind(c.req.param('id'),...RETIRED_SOURCE_IDS).first();
   return row?c.json(hydrate(row)):c.json({error:'Role not found.'},404);
 });
 app.get('/api/sources',async c=> {
-  const result=await c.env.DB.prepare(`SELECT s.*, c.complete,c.advertised_count,c.fetched_count, (SELECT count(*) FROM jobs j WHERE j.source_id=s.id AND j.active=1) AS job_count FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id ORDER BY s.company`).all<any>();
+  const result=await c.env.DB.prepare(`SELECT s.*, c.complete,c.advertised_count,c.fetched_count, (SELECT count(*) FROM jobs j WHERE j.source_id=s.id AND j.active=1) AS job_count FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id WHERE s.id NOT IN (${retiredSql}) ORDER BY s.company`).bind(...RETIRED_SOURCE_IDS).all<any>();
   const rows:Source[]=result.results.map(r=>({id:r.id,company:r.company,provider:r.provider,url:r.url,country:r.country,status:r.status,lastCheckedAt:r.last_checked_at,lastSuccessAt:r.last_success_at,jobCount:r.job_count,message:r.message,coverage:r.status==='healthy'?(r.complete===1?'complete':'partial'):'unavailable',advertisedCount:r.advertised_count??null,fetchedCount:r.fetched_count??null}));
   return c.json(rows);
 });
 app.get('/api/overview',async c=> {
   const db=c.env.DB,today=new Date(Date.now()-24*3_600_000).toISOString();
   const [stats,sourceStats,last,schedule]=await Promise.all([
-    db.prepare('SELECT count(*) AS total, sum(CASE WHEN posted_at>=? THEN 1 ELSE 0 END) AS today, sum(CASE WHEN work_mode=\'Remote\' THEN 1 ELSE 0 END) AS remote, count(DISTINCT company) AS companies FROM jobs WHERE active=1').bind(today).first<any>(),
-    db.prepare('SELECT count(*) AS total,sum(CASE WHEN s.status=\'healthy\' THEN 1 ELSE 0 END) AS healthy,sum(CASE WHEN s.status=\'healthy\' AND c.complete=1 THEN 1 ELSE 0 END) AS complete FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id').first<any>(),
+    db.prepare(`SELECT count(*) AS total, sum(CASE WHEN posted_at>=? THEN 1 ELSE 0 END) AS today, sum(CASE WHEN work_mode=\'Remote\' THEN 1 ELSE 0 END) AS remote, count(DISTINCT company) AS companies FROM jobs WHERE active=1 AND source_id NOT IN (${retiredSql})`).bind(today,...RETIRED_SOURCE_IDS).first<any>(),
+    db.prepare(`SELECT count(*) AS total,sum(CASE WHEN s.status=\'healthy\' THEN 1 ELSE 0 END) AS healthy,sum(CASE WHEN s.status=\'healthy\' AND c.complete=1 THEN 1 ELSE 0 END) AS complete FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id WHERE s.id NOT IN (${retiredSql})`).bind(...RETIRED_SOURCE_IDS).first<any>(),
     db.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT 1').first<any>(),
     db.prepare("SELECT value FROM settings WHERE key='schedule_enabled'").first<{value:string}>(),
   ]);

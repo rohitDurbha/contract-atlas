@@ -6,6 +6,15 @@ export function plainText(value: unknown): string {
   if (typeof value !== 'string') return '';
   return load(`<div>${value}</div>`)('div').text().replace(/\s+/g, ' ').trim();
 }
+export function descriptionText(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const $=load(`<div id="description-root">${value}</div>`);
+  $('script,style,iframe,form,button,nav').remove();
+  $('br').replaceWith('\n');
+  $('li').each((_,el)=>{$(el).prepend('\n• ');$(el).append('\n');});
+  $('p,div,section,article,h1,h2,h3,h4,h5,h6,ul,ol,table,tr,blockquote').each((_,el)=>{$(el).prepend('\n');$(el).append('\n');});
+  return $('#description-root').text().replace(/[^\S\n]+/g,' ').replace(/ *\n */g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+}
 export function classify(title: string, sourceCategory = ''): string {
   const t = `${title} ${sourceCategory}`.toLowerCase();
   if (/data|analytics|business intelligence|machine learning|statistic/.test(t)) return 'Data & Analytics';
@@ -45,7 +54,7 @@ export function makeJob(source: SourceConfig, input: Partial<Job> & { sourceJobI
   const applyUrl = safeUrl(input.applyUrl, source.url);
   const title = plainText(input.title).slice(0,240);
   if (!title || !applyUrl || !input.sourceJobId) return null;
-  const description = plainText(input.description).slice(0,18000);
+  const description = descriptionText(input.description).slice(0,18000);
   return {
     id: `${source.id}:${input.sourceJobId}`,
     sourceId: source.id,
