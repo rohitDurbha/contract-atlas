@@ -1,7 +1,7 @@
 export type DescriptionBlock = {type:'heading'|'paragraph'|'list';text:string;items?:string[]};
 const headings='Job Summary|Position Summary|Summary|Overview|About the Role|About the Position|Key Responsibilities|Responsibilities|Duties|Required Qualifications|Preferred Qualifications|Qualifications|Requirements|Required Skills|Preferred Skills|Skills|Education|Experience|Benefits|What You Will Do|What You Bring';
 export function descriptionBlocks(value:string):DescriptionBlock[] {
-  const text=value.replace(/\r\n?/g,'\n').replace(new RegExp(`(${headings})\\s*:`, 'gi'),'\n\n$1:\n\n')
+  const text=value.replace(/\r\n?/g,'\n').replace(/(^|\n)[ \t]*([•●▪*-])[ \t]*\n+\s*/g,'$1$2 ').replace(new RegExp(`(${headings})\\s*:`, 'gi'),'\n\n$1:\n\n')
     .replace(/(Title|Location|Duration|Work Engagement|Work Schedule|Job Title|Estimated Duration):/g,'\n$1:')
     .replace(/\.([A-Z][a-z]{2,})/g,'. $1');
   const blocks:DescriptionBlock[]=[];
