@@ -4,7 +4,7 @@ import {descriptionBlocks} from '../src/description';
 import {SOURCES,RETIRED_SOURCE_IDS} from '../server/sources';
 describe('readable source descriptions',()=>{
  it('preserves paragraph, heading and list boundaries without executable markup',()=>{
-  const text=descriptionText('<h2>Responsibilities</h2><p>Build reliable pipelines.</p><ul><li>Use SQL.</li><li>Review data.</li></ul><script>bad()</script><p>Location:<br>San Jose</p>');
+  const text=descriptionText('<h2>Responsibilities</h2><p>Build reliable pipelines.</p><ul><li><p>Use SQL.</p></li><li><div>Review data.</div></li></ul><script>bad()</script><p>Location:<br>San Jose</p>');
   const blocks=descriptionBlocks(text);
   expect(blocks).toContainEqual({type:'heading',text:'Responsibilities'});
   expect(blocks).toContainEqual({type:'list',text:'',items:['Use SQL.','Review data.']});
