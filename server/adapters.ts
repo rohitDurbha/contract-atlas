@@ -1,4 +1,4 @@
-import { inspyrFeed, tundraFeed } from './staffing-feeds.js';
+import { insightFeed, inspyrFeed, tundraFeed } from './staffing-feeds.js';
 import { load } from 'cheerio/slim';
 import type { Job, Source } from '../src/types.js';
 import type { SourceConfig } from './sources.js';
@@ -232,6 +232,10 @@ export async function collectSource(source: SourceConfig, now = new Date().toISO
       return await talentNet(source,await fetchPublic(landing.url),now);
     }
     await checkRobots(source);
+    if (source.id==='insightglobal') {
+      await checkRobots({...source,url:'https://insightglobal.com/all/jobs'});
+      return await insightFeed(source,now,fetchPublic);
+    }
     if (source.id==='tundra') {
       await checkRobots({...source,url:new URL('/wp-json/wp/v2/matador-job-listings',source.url).href});
       return await tundraFeed(source,now,fetchPublic);
