@@ -23,6 +23,23 @@ function sqliteD1(): D1Database {
 const ctx={waitUntil(){},passThroughOnException(){},props:{}} as unknown as ExecutionContext;
 async function request(db:D1Database,path:string,options?:RequestInit){return worker.fetch(new Request('https://atlas.test'+path,options),{DB:db,ASSETS:{fetch:async()=>new Response('static')} as any},ctx);}
 describe('database-backed API',()=> {
+  it('shares the monthly technical-role policy across search, details, facets, and counts',async()=>{
+    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    const recent=new Date(Date.now()-86400000).toISOString(),old=new Date(Date.now()-65*86400000).toISOString();
+    const titles=['Software Engineer','Data Analyst','AI/ML Engineer','Research Scientist','Retail Associate','Account Manager','Data Center Technician','Data Entry Clerk','Data Engineer','ML Engineer','Software Developer'];
+    for(let i=0;i<titles.length;i++){
+      const job=makeJob(SOURCES[0],{sourceJobId:'scope'+i,title:titles[i],applyUrl:'https://example.com/jobs/'+i,postedAt:i===8?old:i===9?null:i===10?new Date(Date.now()+86400000).toISOString():recent,description:'Uses AI software and data.'},recent)!;
+      await jobStatement(db,job).run();
+    }
+    const feed=await (await request(db,'/api/jobs')).json() as any;
+    expect(feed.total).toBe(4);expect(feed.facets.companies[0].count).toBe(4);
+    expect((await (await request(db,'/api/jobs?id=meta:scope4')).json() as any).total).toBe(0);
+    expect((await request(db,'/api/jobs/meta:scope4')).status).toBe(404);
+    expect((await request(db,'/api/jobs/meta:scope0')).status).toBe(200);
+    expect((await (await request(db,'/api/overview')).json() as any).totalJobs).toBe(4);
+    expect((await (await request(db,'/api/sources')).json() as any[]).find(s=>s.id==='meta').jobCount).toBe(4);
+  });
+
   it('provides pagination, multi-filter intersections, and safe literal search',async()=> {
     const db=sqliteD1();await ensureDB(db);
     const response=await request(db,'/api/jobs?mode=Remote&category=Engineering+%26+IT');
@@ -32,7 +49,7 @@ describe('database-backed API',()=> {
   });
   it('upserts without creating duplicate roles or resetting first discovery',async()=> {
     const db=sqliteD1();await ensureDB(db);const s=SOURCES[0];
-    const first=makeJob(s,{sourceJobId:'stable-id',title:'Data Engineer',applyUrl:'https://us.meta.talentnet.community/jobs/stable-id'},'2026-09-01T00:00:00.000Z')!;
+    const first=makeJob(s,{sourceJobId:'stable-id',title:'Data Engineer',postedAt:new Date().toISOString(),applyUrl:'https://us.meta.talentnet.community/jobs/stable-id'},'2026-09-01T00:00:00.000Z')!;
     await jobStatement(db,first).run();await jobStatement(db,{...first,title:'Senior Data Engineer',firstSeenAt:'2026-09-30T00:00:00.000Z',lastSeenAt:'2026-09-30T00:00:00.000Z'}).run();
     const r=await request(db,'/api/jobs?id=meta%3Astable-id');const d=await r.json() as any;
     expect(d.total).toBe(1);expect(d.jobs[0].title).toBe('Senior Data Engineer');expect(d.jobs[0].firstSeenAt).toBe('2026-09-01T00:00:00.000Z');expect(d.jobs[0].lastSeenAt).toBe('2026-09-30T00:00:00.000Z');
