@@ -35,10 +35,10 @@ describe('Insight Global public feed',()=>{
   expect(result.complete).toBe(true);expect(result.jobs).toHaveLength(2);
   expect(result.jobs[0]).toMatchObject({employmentType:'Perm',postedAt:'2026-10-13T12:00:00.000Z',payPeriod:'hour',workMode:'Remote',description:''});
  });
- it('includes the six-month boundary and excludes older, missing, and future dates',async()=>{
-  const rows=['2026-04-13T20:00:00Z','2026-04-13T19:59:59Z',undefined,'2026-10-14T00:00:00Z'].map((postedDate,i)=>({...row(i+1),postedDate}));
+ it('includes the one-month boundary and excludes older, missing, and future dates',async()=>{
+  const rows=['2026-09-13T20:00:00Z','2026-09-13T19:59:59Z',undefined,'2026-10-14T00:00:00Z'].map((postedDate,i)=>({...row(i+1),postedDate}));
   const result=await insightFeed(source,now,async()=>JSON.stringify({jobs:rows,pageMetadata:{size:50,number:1,totalElements:4,totalPages:1}}));
-  expect(result.jobs).toHaveLength(1);expect(result.jobs[0].postedAt).toBe('2026-04-13T20:00:00.000Z');
+  expect(result.jobs).toHaveLength(1);expect(result.jobs[0].postedAt).toBe('2026-09-13T20:00:00.000Z');
   expect(result.complete).toBe(true);expect(result.retrievedCount).toBe(4);
  });
  it('continues across batches when the live total changes',async()=>{
