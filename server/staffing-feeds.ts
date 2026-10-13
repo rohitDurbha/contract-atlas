@@ -119,12 +119,12 @@ export async function insightFeed(source:SourceConfig,now:string,read:Reader):Pr
     // Completeness stays false so existing listings are not retired.
   }
   const result=finish(jobs,total,valid,'Insight Global public search');
-  // Keep only source-dated listings from the last six calendar months.
+  // Keep only source-dated listings from the last one calendar month.
   const end=new Date(now),cutoff=new Date(end),day=cutoff.getUTCDate();
-  cutoff.setUTCDate(1);cutoff.setUTCMonth(cutoff.getUTCMonth()-6);
+  cutoff.setUTCDate(1);cutoff.setUTCMonth(cutoff.getUTCMonth()-1);
   const lastDay=new Date(Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth()+1,0)).getUTCDate();
   cutoff.setUTCDate(Math.min(day,lastDay));
   result.jobs=result.jobs.filter(job=>job.postedAt && Date.parse(job.postedAt)>=cutoff.getTime() && Date.parse(job.postedAt)<=end.getTime());
-  result.message+=` ${result.jobs.length} eligible roles posted within six months; older, undated, and future-dated listings excluded.`;
+  result.message+=` ${result.jobs.length} eligible roles posted within one month; older, undated, and future-dated listings excluded.`;
   return result;
 }
