@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {inspyrFeed,tundraFeed} from '../server/staffing-feeds';
+import {insightFeed,inspyrFeed,tundraFeed} from '../server/staffing-feeds';
 import {SOURCES} from '../server/sources';
 const now='2026-10-08T23:00:00Z',inspyr=SOURCES.find(s=>s.id==='inspyr')!,tundra=SOURCES.find(s=>s.id==='tundra')!;
 const card=(id:number,type='Direct Placement')=>`<article class="pp-content-post" data-id="${id}"><a class="home_jobs_title" href="/job/${id}">Developer</a><p class="home_jobs_more_info">Houston, TX</p><p class="home_jobs_more_info">${type}</p><meta itemprop="datePublished" content="2026-10-07T19:00:00+00:00"></article>`;
@@ -22,5 +22,39 @@ describe('staffing board completeness',()=>{
  it('retains partial data when a later Tundra page fails; rejects repeated pages',async()=>{
   let r=await tundraFeed(tundra,now,async url=>{if(url.includes('/country?'))return env([]);if(url.includes('page=2&'))throw Error('503');return env([row(1)],2,2);});expect(r.complete).toBe(false);expect(r.jobs).toHaveLength(1);
   r=await tundraFeed(tundra,now,async url=>url.includes('/country?')?env([]):env([row(1)],2,2));expect(r.complete).toBe(false);
+ });
+});
+
+describe('Insight Global public feed',()=>{
+ const now='2026-10-13T20:00:00Z';
+ const source=SOURCES.find(s=>s.id==='insightglobal')!;
+ const row=(id:number)=>({requisitionId:`00000000-0000-0000-0000-${String(id).padStart(12,'0')}`,jobTitle:'Data Analyst',jobStatus:'active',jobType:'Perm',postedDate:'2026-10-13T12:00:00Z',workRemote:true,payRate:{min:40,max:60,type:'Hourly',currency:'USD'},workAddress:{locality:'San Jose',administrativeArea:'CA'}});
+ const page=(n:number,rows:any[],total=2)=>JSON.stringify({jobs:rows,pageMetadata:{size:50,number:n,totalElements:total,totalPages:2}});
+ it('collects every page and preserves posting date, employment type, and pay units',async()=>{
+  const result=await insightFeed(source,now,async url=>{const n=Number(new URL(url).searchParams.get('page'));return page(n,[row(n)]);});
+  expect(result.complete).toBe(true);expect(result.jobs).toHaveLength(2);
+  expect(result.jobs[0]).toMatchObject({employmentType:'Perm',postedAt:'2026-10-13T12:00:00.000Z',payPeriod:'hour',workMode:'Remote',description:''});
+ });
+ it('includes the six-month boundary and excludes older, missing, and future dates',async()=>{
+  const rows=['2026-04-13T20:00:00Z','2026-04-13T19:59:59Z',undefined,'2026-10-14T00:00:00Z'].map((postedDate,i)=>({...row(i+1),postedDate}));
+  const result=await insightFeed(source,now,async()=>JSON.stringify({jobs:rows,pageMetadata:{size:50,number:1,totalElements:4,totalPages:1}}));
+  expect(result.jobs).toHaveLength(1);expect(result.jobs[0].postedAt).toBe('2026-04-13T20:00:00.000Z');
+  expect(result.complete).toBe(true);expect(result.retrievedCount).toBe(4);
+ });
+ it('continues across batches when the live total changes',async()=>{
+  const visited:number[]=[];
+  const result=await insightFeed(source,now,async url=>{
+   const n=Number(new URL(url).searchParams.get('page'));visited.push(n);
+   return JSON.stringify({jobs:[row(n)],pageMetadata:{size:50,number:n,totalElements:n===1?7:8,totalPages:7}});
+  });
+  expect(visited).toHaveLength(7);expect(result.jobs).toHaveLength(7);expect(result.complete).toBe(false);
+ });
+ it('reports partial coverage for repeated pages, changed totals, or failures',async()=>{
+  for(const next of [page(2,[row(1)]),page(2,[row(2)],3),page(1,[row(2)])]){
+   const result=await insightFeed(source,now,async url=>new URL(url).searchParams.get('page')==='1'?page(1,[row(1)]):next);
+   expect(result.complete).toBe(false);
+  }
+  const result=await insightFeed(source,now,async url=>{if(new URL(url).searchParams.get('page')==='2')throw Error('503');return page(1,[row(1)]);});
+  expect(result.complete).toBe(false);expect(result.jobs).toHaveLength(1);
  });
 });
