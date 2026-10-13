@@ -27,14 +27,18 @@ async function boundedCollect(index:number,now:string):Promise<Collection> {
   try {return await Promise.race([collectSource(SOURCES[index],now),deadline]);} catch {return {jobs:[],status:'error',message:'Source collection failed; previous listings were retained.',complete:false};} finally {clearTimeout(timer!);}
 }
 export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:number}> {
-  const row=await db.prepare('SELECT * FROM runs WHERE id=?').bind(id).first<RunRow>();
+  let row=await db.prepare('SELECT * FROM runs WHERE id=?').bind(id).first<RunRow>();
   if(!row) throw new Error('Refresh run not found.');
   if(row.status!=='running') return formatRun(row);
   const owner=crypto.randomUUID();
   if(!await lease(db,`step:${id}`,owner,270)) return formatRun(row);
   try {
+    // Another caller may have advanced the cursor before this lease was acquired.
+    row=await db.prepare('SELECT * FROM runs WHERE id=?').bind(id).first<RunRow>();
+    if(!row)throw new Error('Refresh run not found.');
+    if(row.status!=='running')return formatRun(row);
     const now=new Date().toISOString(),batch=SOURCES.slice(row.cursor,row.cursor+1);
-    const results=await Promise.all(batch.map((_,i)=>boundedCollect(row.cursor+i,now)));
+    const results=await Promise.all(batch.map((_,i)=>boundedCollect(row!.cursor+i,now)));
     let success=0,newCount=0,jobCount=0;
     for(let i=0;i<batch.length;i++) {
       const source=batch[i],result=results[i];
@@ -42,10 +46,21 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
       try {
         const existing=await db.prepare('SELECT * FROM jobs WHERE source_id=?').bind(source.id).all<any>();
         const previous=existing.results.map(hydrate);
+        // Never retire a populated source on an unexplained empty response.
+        // Only an explicit upstream zero is evidence of a genuinely empty feed.
+        if(result.complete && !result.jobs.length && previous.some(j=>j.active) && result.advertisedCount!==0) {
+          result.complete=false;
+          result.message='Empty response was not confirmed by an upstream count; previous listings retained.';
+        }
+        if(result.complete && result.advertisedCount!==undefined && result.retrievedCount!==undefined && result.retrievedCount<result.advertisedCount) {
+          result.complete=false;
+          result.message='Retrieved fewer records than advertised; previous listings retained and coverage marked partial.';
+        }
         const byId=new Map(previous.map(j=>[j.id,j]));
         const byUrl=new Map(previous.map(j=>[j.applyUrl,j]));
         const reconciled=new Map<string,Job>();
         for(const incoming of result.jobs) {
+          if(!incoming || typeof incoming.id!=='string' || !incoming.id.startsWith(source.id+':') || typeof incoming.title!=='string' || !incoming.title.trim() || !/^https:\/\//.test(incoming.applyUrl))throw new Error('Invalid normalized job');
           if(incoming.sourceId!==source.id)throw new Error('Source identity mismatch');
           const urlMatch=byUrl.get(incoming.applyUrl),idMatch=byId.get(incoming.id);
           // If two existing identities converge, retain the source snapshot for
@@ -62,7 +77,7 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
         }
         result.jobs=[...reconciled.values()];
         const writes=result.jobs.map(j=>jobStatement(db,j));
-        if(result.retireExisting)writes.unshift(db.prepare('UPDATE jobs SET active=0 WHERE source_id=?').bind(source.id));
+        if(result.retireExisting && result.complete && result.status==='healthy')writes.unshift(db.prepare('UPDATE jobs SET active=0 WHERE source_id=?').bind(source.id));
         if(result.complete && result.status==='healthy') {
           const cutoff=new Date(Date.now()-48*3_600_000).toISOString();
           writes.push(db.prepare('UPDATE jobs SET active=0 WHERE source_id=? AND last_seen_at<?').bind(source.id,cutoff));
