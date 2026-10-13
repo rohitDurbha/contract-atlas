@@ -24,10 +24,11 @@ describe('free standalone snapshot',()=>{
     const dir=await mkdtemp(join(tmpdir(),'atlas-free-')),path=join(dir,'atlas.sqlite');
     try {
       await copyFile('data/atlas.sqlite',path);
+      const writer=openSQLite(path);try{await ensureDB(writer.db);}finally{writer.close();}
       const before=await readFile(path),reader=openSQLite(path,true),fetcher=freeFetch(reader.db);
       try {
         for(const route of ['/api/overview','/api/sources','/api/jobs?q=Data%20Labeling%20Analyst','/api/jobs?page=2','/api/jobs?sort=pay','/api/runs'])expect((await fetcher(new Request('https://atlas.test'+route))).status).toBe(200);
-        const sources=await (await fetcher(new Request('https://atlas.test/api/sources'))).json() as any[];expect(sources.length).toBe(57);
+        const sources=await (await fetcher(new Request('https://atlas.test/api/sources'))).json() as any[];expect(sources.length).toBe(58);
         const roles=await (await fetcher(new Request('https://atlas.test/api/jobs?q=Data%20Labeling%20Analyst'))).json() as any;expect(roles.total).toBeGreaterThan(0);
         const access=await (await fetcher(new Request('https://atlas.test/api/access'))).json();expect(access).toEqual({canRefresh:false});
         expect((await fetcher(new Request('https://atlas.test/api/refresh',{method:'POST'}))).status).toBe(405);
@@ -41,7 +42,7 @@ describe('free standalone snapshot',()=>{
       await ensureDB(db);
       const before=await db.prepare("SELECT last_success_at FROM sources WHERE id='meta'").first<any>();
       const count=await db.prepare("SELECT count(*) AS n FROM jobs WHERE source_id='meta' AND active=1").first<any>();
-      const run=await runScheduled(db);expect(run.status).toBe('partial');expect(run.sourceCount).toBe(57);expect(run.successCount).toBe(56);
+      const run=await runScheduled(db);expect(run.status).toBe('partial');expect(run.sourceCount).toBe(58);expect(run.successCount).toBe(57);
       const after=await db.prepare("SELECT status,last_success_at FROM sources WHERE id='meta'").first<any>();
       expect(after.status).toBe('blocked');expect(after.last_success_at).toBe(before.last_success_at);
       expect((await db.prepare("SELECT count(*) AS n FROM jobs WHERE source_id='meta' AND active=1").first<any>()).n).toBe(count.n);
@@ -82,7 +83,7 @@ describe('source identity reconciliation',()=>{
         {...old,title:'Should roll back'}, {...old,id:'meta:invalid',applyUrl:old.applyUrl+'?different',location:null as any}
       ]});
       const run=await runScheduled(db);
-      expect(run.status).toBe('partial');expect(run.successCount).toBe(56);
+      expect(run.status).toBe('partial');expect(run.successCount).toBe(57);
       const saved=hydrate(await db.prepare('SELECT * FROM jobs WHERE id=?').bind(old.id).first());
       expect(saved.title).toBe(old.title);expect(saved.active).toBe(true);
       const source=await db.prepare("SELECT status,last_success_at FROM sources WHERE id='meta'").first<any>();
@@ -125,7 +126,7 @@ describe('feed safety guards',()=>{
     const {db,close}=openSQLite(':memory:');
     try {
       await ensureDB(db);vi.mocked(collectSource).mockRejectedValueOnce(new Error('network reset'));
-      const run=await runScheduled(db);expect(run.status).toBe('partial');expect(run.successCount).toBe(56);
+      const run=await runScheduled(db);expect(run.status).toBe('partial');expect(run.successCount).toBe(57);
     }finally{close();}
   });
 });
