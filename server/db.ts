@@ -52,9 +52,22 @@ export function hydrate(row: { data: string; first_seen_at?: string; last_seen_a
   const j=JSON.parse(row.data) as Job;
   return {...j,firstSeenAt:row.firstSeenAt || row.first_seen_at || j.firstSeenAt,lastSeenAt:row.lastSeenAt || row.last_seen_at || j.lastSeenAt,postedAt:row.postedAt || row.posted_at || j.postedAt,active:(row.active ?? 1)===1};
 }
+// One policy shared by listings, facets, detail URLs, and dashboard counts.
+export function feedScopeSql(alias='' , now=new Date()):string {
+  if(alias && !/^[a-z_]+$/.test(alias))throw new Error('Invalid SQL alias');
+  const prefix=alias?alias+'.':'';
+  const cutoff=new Date(now),day=cutoff.getUTCDate();
+  cutoff.setUTCDate(1);cutoff.setUTCMonth(cutoff.getUTCMonth()-1);
+  cutoff.setUTCDate(Math.min(day,new Date(Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth()+1,0)).getUTCDate()));
+  const title=`(' ' || lower(replace(replace(replace(replace(${prefix}title,'-',' '),'/',' '),'(',' '),')',' ')) || ' ')`;
+  const terms=['software','developer','programmer','frontend','front end','backend','back end','full stack','fullstack','devops','devsecops','site reliability','sre','data','analytics','business intelligence','database','machine learning','deep learning','artificial intelligence','ai','ml','llm','nlp','computer vision','research','researcher','applied scientist','qa engineer','sdet','test automation','cloud engineer','platform engineer','bioinformatics','computational','statistician'];
+  const related=terms.map(term=>`${title} LIKE '% ${term} %'`).join(' OR ');
+  // Datacenter facilities and data-entry clerical work are outside this technical feed.
+  return `(${prefix}active=1 AND julianday(${prefix}posted_at)>=julianday('${cutoff.toISOString()}') AND julianday(${prefix}posted_at)<=julianday('${now.toISOString()}') AND (${related}) AND ${title} NOT LIKE '% data center %' AND ${title} NOT LIKE '% datacenter %' AND ${title} NOT LIKE '% data entry %')`;
+}
 export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed> {
   const orm=drizzle(db),j=schema.jobs;
-  const active=and(eq(j.active,1),inArray(j.sourceId,SOURCES.map(s=>s.id)));
+  const active=and(sql.raw(feedScopeSql()),inArray(j.sourceId,SOURCES.map(s=>s.id)));
   const filters=[active];
   const query=p.get('q')?.trim().slice(0,150);
   if (query) { const term=`%${query.replace(/[\\%_]/g,'\\$&')}%`; filters.push(sql`(${j.title} LIKE ${term} ESCAPE '\\' OR ${j.company} LIKE ${term} ESCAPE '\\' OR ${j.location} LIKE ${term} ESCAPE '\\' OR ${j.data} LIKE ${term} ESCAPE '\\')`); }
