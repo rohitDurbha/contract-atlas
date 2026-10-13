@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe,it,expect,vi } from 'vitest';
 import { openSQLite } from '../server/sqlite';
-import { ensureDB } from '../server/db';
+import { ensureDB, hydrate } from '../server/db';
 import { freeFetch } from '../server/free-runtime';
 vi.mock('../server/adapters',()=>({collectSource:vi.fn(async(source:any)=>({jobs:[],status:source.id==='meta'?'blocked':'healthy',message:'Test collection result',complete:false}))}));
-import { runScheduled } from '../server/ingestion';
+import { collectSource } from '../server/adapters';
+import { SOURCES } from '../server/sources';
+import { runScheduled, startRun, stepRun } from '../server/ingestion';
 import publicAPI from '../api/index';
 
 describe('free standalone snapshot',()=>{
@@ -44,5 +46,47 @@ describe('free standalone snapshot',()=>{
       expect(after.status).toBe('blocked');expect(after.last_success_at).toBe(before.last_success_at);
       expect((await db.prepare("SELECT count(*) AS n FROM jobs WHERE source_id='meta' AND active=1").first<any>()).n).toBe(count.n);
     }finally{close();}
+  });
+});
+
+describe('source identity reconciliation',()=>{
+  it('merges changed IDs and repeated URLs without resetting first seen or descriptions',async()=>{
+    const {db,close}=openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      const row=await db.prepare("SELECT * FROM jobs WHERE source_id='meta' LIMIT 1").first<any>();
+      const old=hydrate(row),now=new Date().toISOString();
+      vi.mocked(collectSource).mockResolvedValueOnce({status:'healthy',complete:true,message:'ok',jobs:[
+        {...old,id:'meta:changed-id',description:'',firstSeenAt:now,lastSeenAt:now,postedAt:null},
+        {...old,id:'meta:another-id',description:'',firstSeenAt:now,lastSeenAt:now,postedAt:null}
+      ]});
+      const run=await startRun(db);
+      await db.prepare('UPDATE runs SET cursor=? WHERE id=?').bind(SOURCES.findIndex(s=>s.id==='meta'),run.id).run();
+      const result=await stepRun(db,run.id);
+      expect(result.newCount).toBe(0);expect(result.jobCount).toBe(1);
+      const saved=hydrate(await db.prepare('SELECT * FROM jobs WHERE id=?').bind(old.id).first());
+      expect(saved.id).toBe(old.id);expect(saved.firstSeenAt).toBe(old.firstSeenAt);
+      expect(saved.description).toBe(old.description);expect(saved.postedAt).toBe(old.postedAt);
+      expect(saved.lastSeenAt).toBe(now);
+      expect((await db.prepare('SELECT count(*) n FROM jobs WHERE source_id=? AND apply_url=?').bind(old.sourceId,old.applyUrl).first<any>()).n).toBe(1);
+    }finally{close();}
+  });
+  it('rolls back a bad source and continues the remaining sources',async()=>{
+    const {db,close}=openSQLite(':memory:');
+    const log=vi.spyOn(console,'error').mockImplementation(()=>{});
+    try {
+      await ensureDB(db);
+      const old=hydrate(await db.prepare("SELECT * FROM jobs WHERE source_id='meta' LIMIT 1").first());
+      const history=await db.prepare("SELECT last_success_at FROM sources WHERE id='meta'").first<any>();
+      vi.mocked(collectSource).mockResolvedValueOnce({status:'healthy',complete:true,retireExisting:true,message:'ok',jobs:[
+        {...old,title:'Should roll back'}, {...old,id:'meta:invalid',applyUrl:old.applyUrl+'?different',title:null as any}
+      ]});
+      const run=await runScheduled(db);
+      expect(run.status).toBe('partial');expect(run.successCount).toBe(56);
+      const saved=hydrate(await db.prepare('SELECT * FROM jobs WHERE id=?').bind(old.id).first());
+      expect(saved.title).toBe(old.title);expect(saved.active).toBe(true);
+      const source=await db.prepare("SELECT status,last_success_at FROM sources WHERE id='meta'").first<any>();
+      expect(source.status).toBe('error');expect(source.last_success_at).toBe(history.last_success_at);
+    }finally{log.mockRestore();close();}
   });
 });
