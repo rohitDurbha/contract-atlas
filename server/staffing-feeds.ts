@@ -80,3 +80,51 @@ export async function tundraFeed(source:SourceConfig,now:string,read:Reader):Pro
   } catch {valid=false;}
   return finish(jobs,total,valid,'Tundra');
 }
+
+// Public, unauthenticated API used by Insight Global's search page.
+export async function insightFeed(source:SourceConfig,now:string,read:Reader):Promise<Collection> {
+  const url=(page:number)=>`https://insightglobal.com/all/jobs?page=${page}&size=50&sort=postedDate,desc&filter.status=active`;
+  const parse=(text:string)=>{
+    const data=JSON.parse(text),m=data.pageMetadata;
+    if(!Array.isArray(data.jobs)||!m||!Number.isInteger(m.totalElements)||m.totalElements<0||!Number.isInteger(m.totalPages)||m.totalPages<0||m.totalPages>300||!Number.isInteger(m.number)||m.size!==50)throw new Error('Insight Global pagination metadata invalid.');
+    return data as {jobs:Record<string,any>[];pageMetadata:{totalElements:number;totalPages:number;number:number;size:number}};
+  };
+  const first=parse(await read(url(1))),total=first.pageMetadata.totalElements,pages=first.pageMetadata.totalPages;
+  const jobs:Job[]=[];let valid=first.pageMetadata.number===1;
+  const append=(page:ReturnType<typeof parse>,number:number)=>{
+    const m=page.pageMetadata;
+    valid &&= m.number===number && m.totalElements===total && m.totalPages===pages;
+    for(const row of page.jobs) {
+      if(row.jobStatus!=='active'){valid=false;continue;}
+      const a=row.workAddress||{},pay=row.payRate||{};
+      if(!/^[a-f0-9-]{36}$/i.test(row.requisitionId||'')){valid=false;continue;}
+      const job=makeJob(source,{sourceJobId:row.requisitionId,title:row.jobTitle,
+        applyUrl:`https://insightglobal.com/jobs/${row.requisitionId}`,
+        location:[a.locality,a.administrativeArea,a.country].filter(Boolean).join(', '),country:a.country||'Not specified',
+        employmentType:row.jobType||'Not specified',workMode:row.workRemote===true?'Remote':'Unspecified',
+        postedAt:row.postedDate,description:row.descriptionHtml||'',payMin:pay.min,payMax:pay.max,currency:pay.currency,
+        payPeriod:pay.type==='Hourly'?'hour':pay.type==='Annually'?'year':pay.type||null},now);
+      if(job)jobs.push(job);else valid=false;
+    }
+  };
+  append(first,1);
+  // Four concurrent public requests, bounded by the advertised page count.
+  for(let start=2;start<=pages;start+=4) {
+    const results=await Promise.allSettled(Array.from({length:Math.min(4,pages-start+1)},async(_,i)=>({number:start+i,page:parse(await read(url(start+i)))})));
+    for(const result of results) {
+      if(result.status==='rejected'){valid=false;continue;}
+      append(result.value.page,result.value.number);
+    }
+    // A changing live total does not prevent collecting the remaining pages.
+    // Completeness stays false so existing listings are not retired.
+  }
+  const result=finish(jobs,total,valid,'Insight Global public search');
+  // Keep only source-dated listings from the last six calendar months.
+  const end=new Date(now),cutoff=new Date(end),day=cutoff.getUTCDate();
+  cutoff.setUTCDate(1);cutoff.setUTCMonth(cutoff.getUTCMonth()-6);
+  const lastDay=new Date(Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth()+1,0)).getUTCDate();
+  cutoff.setUTCDate(Math.min(day,lastDay));
+  result.jobs=result.jobs.filter(job=>job.postedAt && Date.parse(job.postedAt)>=cutoff.getTime() && Date.parse(job.postedAt)<=end.getTime());
+  result.message+=` ${result.jobs.length} eligible roles posted within six months; older, undated, and future-dated listings excluded.`;
+  return result;
+}
