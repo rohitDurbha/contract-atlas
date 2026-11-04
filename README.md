@@ -69,8 +69,21 @@ npm run verify:free
 | `GET /api/sources` | Status and collection times for every source |
 | `GET /api/runs` | The twenty most recent collection runs |
 | `GET /api/access` | Public API permissions |
+| `POST /api/mcp` | MCP server for AI assistants (see below) |
 
-The public API is read-only, and any write request returns 405.
+The public API is read-only. Write requests to the REST endpoints return 405, and the MCP endpoint accepts POST only because MCP sends its read requests as JSON-RPC.
+
+## MCP server
+
+AI assistants such as Claude can search the feed through a read-only Model Context Protocol server at `https://contract-atlas-amber.vercel.app/api/mcp`. It uses stateless Streamable HTTP and needs no login, so any MCP client that supports remote servers can connect to that URL directly. In Claude you can add it as a custom connector with that address.
+
+| Tool | What it returns |
+| --- | --- |
+| `search_jobs` | Matching roles with short summaries, the total count and filter facets, using the same filters as the website |
+| `get_job` | One role with its full description, skills, pay and apply link |
+| `list_sources` | Every job board in the feed with its health, coverage and current role count |
+
+Every tool reads the bundled snapshot through the same feed policy as the site, so an assistant sees exactly what a visitor would. When `npm run dev:api` is running, the same server is available locally at `http://127.0.0.1:8787/api/mcp`. More tools and full client setup guides are planned in [ROADMAP.md](ROADMAP.md).
 
 ## Deployment setup
 
