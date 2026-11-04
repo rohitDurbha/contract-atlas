@@ -1,27 +1,43 @@
-# Contract Atlas — free public hosting
+# Contract Atlas
 
-A responsive contract-job feed with search, filters, saved roles, source health, and collection history. This release uses Vercel Hobby, a public GitHub repository, GitHub Actions, and a bundled SQLite database. It requires no paid database, paid hosting plan, GPT subscription, AI scraping agents, or purchased domain.
+Contract Atlas is a searchable feed of technical contract roles collected from the public job boards that large companies use for their contingent workforce. It pulls listings from 43 portals across TalentNet, Magnit, KellyOCG, Raise, Insight Global, INSPYR and Tundra, cleans them up, and publishes a fresh snapshot every two hours.
 
-Deployment instructions: [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md). The public deployment is live at https://contract-atlas-amber.vercel.app/. Scheduled refreshes remain pending the `VERCEL_TOKEN` GitHub Actions secret and verification of the first successful run.
+You can browse the live feed at **https://contract-atlas-amber.vercel.app**.
 
-## Architecture
+## What it does
 
-| Component | Implementation |
+- Lists software, data, AI and research contract roles that were posted within the last 90 days.
+- Leaves out permanent and direct hire roles that mixed staffing boards publish next to their contract work.
+- Shows a single listing when a company reposts the same opening under several requisition IDs.
+- Offers search, filters for company, category, work mode and country, sorting by date or pay, and saved roles that stay on the visitor's own device.
+- Reports the health of every source, including whether its last collection was complete or only partial.
+
+Every listing comes from a real public posting. The collector respects robots.txt, login walls and access restrictions, and it never invents or generates job data.
+
+## How it works
+
+| Piece | What it uses |
 | --- | --- |
-| Frontend | React, TypeScript, Vite, Tailwind CSS, TanStack Query |
-| Public API | Hono on a Vercel Node.js 24 function |
-| Database | Read-only SQLite snapshot bundled with the function |
-| Collector | Existing deterministic TypeScript source adapters on GitHub Actions |
-| Persistence | Public repository commits to `data/atlas.sqlite` |
-| Hosting | Vercel Hobby and its included public `vercel.app` URL |
+| Frontend | React, TypeScript, Vite, Tailwind CSS and TanStack Query |
+| API | Hono running as a Vercel Node.js function |
+| Data | A read-only SQLite snapshot in `data/atlas.sqlite` that ships with the function |
+| Collector | TypeScript source adapters that run in GitHub Actions |
+| Scheduler | GitHub Actions cron with a Cloudflare Worker that starts runs on time |
+| Hosting | Vercel Hobby with the included `vercel.app` domain |
 
-The workflow checks the 43 registered public company portals every two hours, updates and verifies the database, commits it, and publishes the next snapshot. Visitors keep using the previous deployment during collection and publishing. GitHub drops many scheduled runs when it is busy, so a small Cloudflare Worker in `dispatcher/` starts the workflow on time (see FREE-DEPLOYMENT.md). The feed lists contract roles posted in the last 90 days, collapses reposted openings, and leaves out permanent and direct-hire roles from mixed staffing boards.
+The refresh workflow in `.github/workflows/refresh.yml` collects every source, verifies the database, commits the new snapshot and deploys it to Vercel. Visitors keep seeing the previous deployment until the new one passes its checks. After each run the collector deletes closed, expired and out of scope rows so the committed snapshot stays small.
 
-Registration does not mean every portal can be collected completely. The source directory reports complete, partial, blocked, pending, and failed coverage. Only actual public listings enter the feed. Login walls, access restrictions, and robots exclusions are respected. There are no fabricated roles or AI-generated listing data.
+The workflow runs in three situations.
 
-## Development
+1. Every two hours on a schedule, started by the Cloudflare dispatcher in `dispatcher/` because GitHub often skips scheduled runs when it is busy.
+2. On every push to `main` that changes code, so each fix is tested and goes live within a few minutes.
+3. By hand from the Actions tab whenever a manual refresh is needed.
 
-Requires Node.js 24. Use separate terminals for the API and UI:
+Pushes that only change Markdown files or the snapshot do not start a deploy. Vercel's own Git integration is turned off in `vercel.json`, so the site never builds twice.
+
+## Running it locally
+
+Local development needs Node.js 24, with the API running in one terminal and the frontend in another.
 
 ```bash
 npm ci
@@ -32,7 +48,9 @@ npm run dev:api
 npm run dev
 ```
 
-Vite proxies `/api` to the local read-only snapshot server on port 8787. Open the URL printed by Vite. Run `npm run collect:free` to collect permitted public sources locally; Vercel receives changes only through a new deployment.
+Vite forwards `/api` requests to the local snapshot server on port 8787. To collect fresh data on your own machine, run `npm run collect:free`.
+
+These commands are the same checks the workflow runs before it deploys.
 
 ```bash
 npm run typecheck
@@ -45,25 +63,40 @@ npm run verify:free
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/jobs` | Search, filters, sorting, pagination, facets |
-| `GET /api/jobs/:id` | Details and original application link |
-| `GET /api/overview` | Feed counts, source health, collection status |
-| `GET /api/sources` | All source statuses and collection timestamps |
-| `GET /api/runs` | Latest twenty persisted collection runs |
+| `GET /api/jobs` | Search, filters, sorting, pagination and facets |
+| `GET /api/jobs/:id` | Full details and the original application link |
+| `GET /api/overview` | Feed counts, source health and the latest run |
+| `GET /api/sources` | Status and collection times for every source |
+| `GET /api/runs` | The twenty most recent collection runs |
 | `GET /api/access` | Public API permissions |
 
-Public mutations return 405. “Reload feed” reads the latest published snapshot; collection runs in GitHub Actions, including manual workflow runs. Saved roles remain in localStorage on each visitor's device, without a paid authentication service.
+The public API is read-only, and any write request returns 405.
 
-## Data integrity
+## Deployment setup
 
-Stable source IDs preserve first discovery across updates. Posting times come from the source; missing dates remain missing. Pay stays unset when the source omits it. TalentNet collection follows the public feed's pagination and verifies distinct source IDs against advertised counts before claiming complete coverage.
+The site runs entirely on free plans. The workflow stops if the repository becomes private or if the Vercel scope is not on the Hobby plan, so it can never trigger a paid upgrade.
 
-Blocked or failed sources retain existing jobs and last-success timestamps. Only confirmed complete collections can expire unseen listings, after at least 48 hours. Generic HTML adapters remain explicitly partial and do not remove unseen roles.
+1. Keep this repository public so GitHub Actions minutes stay free.
+2. Store a Vercel token for the `rohitdurbha-1631` scope as the GitHub Actions secret `VERCEL_TOKEN`. The Vercel project and team IDs in the workflow are public identifiers and are not secrets.
+3. Allow GitHub Actions to write repository contents so it can commit each new snapshot.
 
-The included bootstrap snapshot was exported from the existing feed on October 1, 2026. It contains 654 active listings, all 59 source records, and the 13 runs available from the export API. Historical inactive rows that were not exposed by that API remain in the original database; this is not a full archival dump.
+To turn on the reliable two hour schedule, deploy the dispatcher to the Cloudflare Workers free plan.
 
-## Free-plan enforcement
+1. Create a fine-grained GitHub token for this repository with read and write access to Actions.
+2. Run `npx wrangler login` and then `npx wrangler deploy --config dispatcher/wrangler.jsonc` from the repository root.
+3. Run `npx wrangler secret put GITHUB_TOKEN --config dispatcher/wrangler.jsonc` and paste the token when it asks.
+4. After the next even hour, open the worker's `/status` page to confirm that a `workflow_dispatch` run started.
 
-The workflow refuses to run in a private repository and refuses to publish unless the authenticated Vercel scope is verified as Hobby. It uses standard public GitHub Actions runners, without paid runners, Actions caches, or uploaded artifacts. Credentials belong in GitHub Actions secrets, never public code or database rows.
+The GitHub schedule stays in place as a backup. All runs share one concurrency group, so two collections never overlap.
 
-Free services impose quotas and availability limits. This release pauses or fails at those limits; it does not purchase upgrades. Vercel Hobby is intended for personal, non-commercial projects. Older Cloudflare compatibility files remain for maintenance; this deployment uses the SQLite scripts and Vercel configuration above.
+## Data rules
+
+- Stable source IDs keep the original discovery date when a role is seen again.
+- Posting dates and pay come straight from the source and stay empty when the source leaves them out.
+- A blocked or failing source keeps its earlier listings until it recovers.
+- Only a complete collection can retire listings, and only after they have been missing for 48 hours.
+- Closed listings are deleted after two weeks, and rows older than 120 days are removed from the snapshot.
+
+## Limits
+
+Free services come with quotas. If GitHub Actions or Vercel reach a limit, collection or publishing pauses until the allowance resets. Vercel Hobby is meant for personal and non-commercial projects, which fits this one.
