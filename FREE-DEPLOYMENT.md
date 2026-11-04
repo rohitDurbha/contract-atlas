@@ -18,14 +18,21 @@ Official references: [GitHub Actions billing](https://docs.github.com/en/billing
 
 5. Allow GitHub Actions to write repository contents so it can commit the snapshot. Keep the standard `ubuntu-latest` runner, without paid runners, caches, or artifacts.
 6. Select **Actions → Refresh Contract Atlas → Run workflow**. It checks public visibility and the Hobby plan, collects sources, verifies the database, commits it, and deploys. Blocked sources preserve earlier listings. Wholly failed ingestion or failed verification stops publishing.
-7. Verify the public URL without ChatGPT: `/api/overview` shows the latest run, `/api/sources` returns 59 source records with actual timestamps, and `/api/jobs?q=Data%20Labeling%20Analyst` returns indexed matches. Test search, source health, saved roles, and application links.
+7. Verify the public URL without ChatGPT: `/api/overview` shows the latest run, `/api/sources` returns 43 source records with actual timestamps, and `/api/jobs?q=Data%20Labeling%20Analyst` returns indexed matches. Test search, source health, saved roles, and application links.
 8. After the public site and a successful Actions run are verified, disable the previous GPT-driven refresh task. The original deployment remains available during migration.
 
 Automatic Git-triggered Vercel deployment is disabled in `vercel.json`. Scheduled refreshes publish explicitly after the free-plan guard, avoiding duplicate builds. For frontend changes, run the same workflow manually after committing them.
 
 ## Timing, persistence, and limits
 
-The workflow runs at minute 17 of every even UTC hour. GitHub may delay jobs, so this is a best-effort two-hour schedule. Runs have a 25-minute timeout; source steps have collection deadlines and adapter retry limits. Concurrent workflows are serialized.
+The workflow is scheduled for minute 17 of every even UTC hour, but GitHub treats schedules as best effort. Busy periods drop runs, and in October and November 2026 the feed refreshed only three or four times a day. To get a real two-hour cadence, deploy the small dispatcher in `dispatcher/` to the Cloudflare Workers free plan. Its cron trigger fires on time and starts the workflow through the GitHub API.
+
+1. Create a fine-grained GitHub token limited to this repository with **Actions: Read and write**.
+2. From the repository root run `npx wrangler login`, then `npx wrangler deploy --config dispatcher/wrangler.jsonc`.
+3. Run `npx wrangler secret put GITHUB_TOKEN --config dispatcher/wrangler.jsonc` and paste the token at the prompt.
+4. Open `https://contract-atlas-dispatcher.<your-subdomain>.workers.dev/status` after the next even hour to confirm a `workflow_dispatch` run started.
+
+The GitHub schedule stays in place as a fallback. Runs share a concurrency group, so a dispatch and a scheduled run never collect at the same time. Each run has a 25-minute timeout, and source steps have collection deadlines and adapter retry limits.
 
 SQLite stores normalized jobs, coverage, truthful posting/discovery dates, source health, leases, and collection history. The workflow commits the database before publishing; Vercel serves its bundled copy read-only. An interrupted workflow leaves the deployed feed untouched. A later run starts from the latest committed snapshot; uncommitted work from a killed runner is not durable.
 
