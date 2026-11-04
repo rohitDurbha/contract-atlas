@@ -3,9 +3,9 @@ const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
-import { ensureDB, hydrate, jobFeed, feedScopeSql } from './db.js';
+import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources } from './db.js';
 import { formatRun, startRun, stepRun, runScheduled } from './ingestion.js';
-import type { Overview, Source } from '../src/types.js';
+import type { Overview } from '../src/types.js';
 
 type Bindings={DB:D1Database;ASSETS:Fetcher};
 const app=new Hono<{Bindings:Bindings}>();
@@ -24,14 +24,10 @@ app.get('/api/access',c=>c.json({canRefresh:true}));
 app.get('/api/health',c=>c.json({ok:true,service:'contract-atlas',timestamp:new Date().toISOString()}));
 app.get('/api/jobs',async c=>c.json(await jobFeed(c.env.DB,new URL(c.req.url).searchParams)));
 app.get('/api/jobs/:id',async c=> {
-  const row=await c.env.DB.prepare(`SELECT * FROM jobs WHERE id=? AND ${feedScopeSql()} AND source_id NOT IN (${retiredSql})`).bind(c.req.param('id'),...RETIRED_SOURCE_IDS).first();
-  return row?c.json(hydrate(row)):c.json({error:'Role not found.'},404);
+  const job=await getFeedJob(c.env.DB,c.req.param('id'));
+  return job?c.json(job):c.json({error:'Role not found.'},404);
 });
-app.get('/api/sources',async c=> {
-  const result=await c.env.DB.prepare(`SELECT s.*, c.complete,c.advertised_count,c.fetched_count, (SELECT count(*) FROM jobs j WHERE j.source_id=s.id AND ${feedScopeSql('j')}) AS job_count FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id WHERE s.id NOT IN (${retiredSql}) ORDER BY s.company`).bind(...RETIRED_SOURCE_IDS).all<any>();
-  const rows:Source[]=result.results.map(r=>({id:r.id,company:r.company,provider:r.provider,url:r.url,country:r.country,status:r.status,lastCheckedAt:r.last_checked_at,lastSuccessAt:r.last_success_at,jobCount:r.job_count,message:r.message,coverage:r.status==='healthy'?(r.complete===1?'complete':'partial'):'unavailable',advertisedCount:r.advertised_count??null,fetchedCount:r.fetched_count??null}));
-  return c.json(rows);
-});
+app.get('/api/sources',async c=>c.json(await listSources(c.env.DB)));
 app.get('/api/overview',async c=> {
   const db=c.env.DB,today=new Date(Date.now()-24*3_600_000).toISOString();
   const [stats,sourceStats,last,schedule]=await Promise.all([

@@ -1,9 +1,9 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { and, eq, like, or, sql, desc, inArray } from 'drizzle-orm';
 import * as schema from './schema.js';
-import { SOURCES } from './sources.js';
+import { SOURCES, RETIRED_SOURCE_IDS } from './sources.js';
 import seed from './seed.json' with { type: 'json' };
-import type { Job, Feed } from '../src/types.js';
+import type { Job, Feed, Source } from '../src/types.js';
 import { feedCutoff, PERMANENT_TYPES } from './policy.js';
 
 const DDL = [
@@ -101,4 +101,15 @@ export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed>
     orm.select({country:j.country}).from(j).where(active).groupBy(j.country).orderBy(j.country),
   ]);
   return {jobs:rows.map(hydrate),total,page,pages,facets:{companies,categories,countries:countries.map(r=>r.country)}};
+}
+const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
+// One role from the public feed, or null when it is outside the feed policy.
+export async function getFeedJob(db: D1Database, id: string): Promise<Job | null> {
+  const row=await db.prepare(`SELECT * FROM jobs WHERE id=? AND ${feedScopeSql()} AND source_id NOT IN (${retiredSql})`).bind(id,...RETIRED_SOURCE_IDS).first();
+  return row?hydrate(row):null;
+}
+// The source directory with live role counts, as shown on the site.
+export async function listSources(db: D1Database): Promise<Source[]> {
+  const result=await db.prepare(`SELECT s.*, c.complete,c.advertised_count,c.fetched_count, (SELECT count(*) FROM jobs j WHERE j.source_id=s.id AND ${feedScopeSql('j')}) AS job_count FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id WHERE s.id NOT IN (${retiredSql}) ORDER BY s.company`).bind(...RETIRED_SOURCE_IDS).all<any>();
+  return result.results.map(r=>({id:r.id,company:r.company,provider:r.provider,url:r.url,country:r.country,status:r.status,lastCheckedAt:r.last_checked_at,lastSuccessAt:r.last_success_at,jobCount:r.job_count,message:r.message,coverage:r.status==='healthy'?(r.complete===1?'complete':'partial'):'unavailable',advertisedCount:r.advertised_count??null,fetchedCount:r.fetched_count??null}));
 }
