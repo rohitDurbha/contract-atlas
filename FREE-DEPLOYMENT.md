@@ -21,7 +21,7 @@ Official references: [GitHub Actions billing](https://docs.github.com/en/billing
 7. Verify the public URL without ChatGPT: `/api/overview` shows the latest run, `/api/sources` returns 43 source records with actual timestamps, and `/api/jobs?q=Data%20Labeling%20Analyst` returns indexed matches. Test search, source health, saved roles, and application links.
 8. After the public site and a successful Actions run are verified, disable the previous GPT-driven refresh task. The original deployment remains available during migration.
 
-Automatic Git-triggered Vercel deployment is disabled in `vercel.json`. Scheduled refreshes publish explicitly after the free-plan guard, avoiding duplicate builds. For frontend changes, run the same workflow manually after committing them.
+Automatic Git-triggered Vercel deployment is disabled in `vercel.json`, so Vercel never builds twice. Instead, the refresh workflow also runs on every push to main that changes code. It tests the change, refreshes the snapshot and deploys through the same free-plan guard, so each fix goes live without a manual step. Pushes that only touch Markdown files or the snapshot do not start a deploy.
 
 ## Timing, persistence, and limits
 

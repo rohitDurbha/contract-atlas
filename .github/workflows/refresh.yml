@@ -3,6 +3,14 @@ on:
   schedule:
     - cron: '17 */2 * * *'
   workflow_dispatch:
+  # Every code change pushed to main is tested, collected and deployed, so a
+  # fix reaches the live site within minutes. Snapshot commits made by this
+  # workflow use GITHUB_TOKEN and never start another run.
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'data/**'
+      - '**.md'
 permissions:
   contents: write
 concurrency:
