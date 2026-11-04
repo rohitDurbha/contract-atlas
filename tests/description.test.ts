@@ -14,8 +14,8 @@ describe('readable source descriptions',()=>{
   const blocks=descriptionBlocks('Title: AnalystLocation: BostonResponsibilities:Review data.Qualifications:SQL experience.');
   expect(blocks.map(b=>b.text)).toEqual(['Title: Analyst','Location: Boston','Responsibilities','Review data.','Qualifications','SQL experience.']);
  });
- it('removes only the four restricted boards from active collection',()=>{
+ it('keeps retired boards out of active collection',()=>{
   expect(RETIRED_SOURCE_IDS.every(id=>!SOURCES.some(s=>s.id===id))).toBe(true);
-  expect(SOURCES).toHaveLength(58);expect(SOURCES.some(s=>s.id==='pnc')).toBe(true);
+  expect(SOURCES).toHaveLength(43);expect(SOURCES.some(s=>s.id==='pnc')).toBe(false);
  });
 });
