@@ -3,6 +3,7 @@ import type { Job } from '../src/types.js';
 import type { SourceConfig } from './sources.js';
 import type { Collection } from './adapters.js';
 import { makeJob, safeUrl, workMode } from './normalize.js';
+import { feedCutoff, isPermanentRole, FEED_WINDOW_DAYS } from './policy.js';
 type Reader=(url:string)=>Promise<string>;
 function finish(jobs:Job[],total:number,complete:boolean,label:string):Collection {
   const unique=[...new Map(jobs.map(j=>[j.id,j])).values()];
@@ -119,12 +120,9 @@ export async function insightFeed(source:SourceConfig,now:string,read:Reader):Pr
     // Completeness stays false so existing listings are not retired.
   }
   const result=finish(jobs,total,valid,'Insight Global public search');
-  // Keep only source-dated listings from the last one calendar month.
-  const end=new Date(now),cutoff=new Date(end),day=cutoff.getUTCDate();
-  cutoff.setUTCDate(1);cutoff.setUTCMonth(cutoff.getUTCMonth()-1);
-  const lastDay=new Date(Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth()+1,0)).getUTCDate();
-  cutoff.setUTCDate(Math.min(day,lastDay));
-  result.jobs=result.jobs.filter(job=>job.postedAt && Date.parse(job.postedAt)>=cutoff.getTime() && Date.parse(job.postedAt)<=end.getTime());
-  result.message+=` ${result.jobs.length} eligible roles posted within one month; older, undated, and future-dated listings excluded.`;
+  // Keep source-dated contract listings inside the feed window.
+  const end=new Date(now),cutoff=feedCutoff(end);
+  result.jobs=result.jobs.filter(job=>!isPermanentRole(job.employmentType) && job.postedAt && Date.parse(job.postedAt)>=cutoff.getTime() && Date.parse(job.postedAt)<=end.getTime());
+  result.message+=` ${result.jobs.length} contract roles posted within ${FEED_WINDOW_DAYS} days; permanent, older, undated, and future-dated listings excluded.`;
   return result;
 }

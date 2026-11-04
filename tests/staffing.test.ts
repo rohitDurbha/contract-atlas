@@ -28,18 +28,23 @@ describe('staffing board completeness',()=>{
 describe('Insight Global public feed',()=>{
  const now='2026-10-13T20:00:00Z';
  const source=SOURCES.find(s=>s.id==='insightglobal')!;
- const row=(id:number)=>({requisitionId:`00000000-0000-0000-0000-${String(id).padStart(12,'0')}`,jobTitle:'Data Analyst',jobStatus:'active',jobType:'Perm',postedDate:'2026-10-13T12:00:00Z',workRemote:true,payRate:{min:40,max:60,type:'Hourly',currency:'USD'},workAddress:{locality:'San Jose',administrativeArea:'CA'}});
+ const row=(id:number)=>({requisitionId:`00000000-0000-0000-0000-${String(id).padStart(12,'0')}`,jobTitle:'Data Analyst',jobStatus:'active',jobType:'Contract',postedDate:'2026-10-13T12:00:00Z',workRemote:true,payRate:{min:40,max:60,type:'Hourly',currency:'USD'},workAddress:{locality:'San Jose',administrativeArea:'CA'}});
  const page=(n:number,rows:any[],total=2)=>JSON.stringify({jobs:rows,pageMetadata:{size:50,number:n,totalElements:total,totalPages:2}});
  it('collects every page and preserves posting date, employment type, and pay units',async()=>{
   const result=await insightFeed(source,now,async url=>{const n=Number(new URL(url).searchParams.get('page'));return page(n,[row(n)]);});
   expect(result.complete).toBe(true);expect(result.jobs).toHaveLength(2);
-  expect(result.jobs[0]).toMatchObject({employmentType:'Perm',postedAt:'2026-10-13T12:00:00.000Z',payPeriod:'hour',workMode:'Remote',description:''});
+  expect(result.jobs[0]).toMatchObject({employmentType:'Contract',postedAt:'2026-10-13T12:00:00.000Z',payPeriod:'hour',workMode:'Remote',description:''});
  });
- it('includes the one-month boundary and excludes older, missing, and future dates',async()=>{
-  const rows=['2026-09-13T20:00:00Z','2026-09-13T19:59:59Z',undefined,'2026-10-14T00:00:00Z'].map((postedDate,i)=>({...row(i+1),postedDate}));
+ it('includes the 90-day boundary and excludes older, missing, and future dates',async()=>{
+  const rows=['2026-07-15T20:00:00Z','2026-07-15T19:59:59Z',undefined,'2026-10-14T00:00:00Z'].map((postedDate,i)=>({...row(i+1),postedDate}));
   const result=await insightFeed(source,now,async()=>JSON.stringify({jobs:rows,pageMetadata:{size:50,number:1,totalElements:4,totalPages:1}}));
-  expect(result.jobs).toHaveLength(1);expect(result.jobs[0].postedAt).toBe('2026-09-13T20:00:00.000Z');
+  expect(result.jobs).toHaveLength(1);expect(result.jobs[0].postedAt).toBe('2026-07-15T20:00:00.000Z');
   expect(result.complete).toBe(true);expect(result.retrievedCount).toBe(4);
+ });
+ it('drops permanent and direct-hire roles but keeps contract-to-hire',async()=>{
+  const rows=['Perm','Direct Placement','Contract To Perm','Right to Hire'].map((jobType,i)=>({...row(i+1),jobType}));
+  const result=await insightFeed(source,now,async()=>JSON.stringify({jobs:rows,pageMetadata:{size:50,number:1,totalElements:4,totalPages:1}}));
+  expect(result.jobs.map(j=>j.employmentType)).toEqual(['Contract To Perm','Right to Hire']);
  });
  it('continues across batches when the live total changes',async()=>{
   const visited:number[]=[];

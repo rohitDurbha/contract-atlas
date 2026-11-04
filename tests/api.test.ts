@@ -23,9 +23,9 @@ function sqliteD1(): D1Database {
 const ctx={waitUntil(){},passThroughOnException(){},props:{}} as unknown as ExecutionContext;
 async function request(db:D1Database,path:string,options?:RequestInit){return worker.fetch(new Request('https://atlas.test'+path,options),{DB:db,ASSETS:{fetch:async()=>new Response('static')} as any},ctx);}
 describe('database-backed API',()=> {
-  it('shares the monthly technical-role policy across search, details, facets, and counts',async()=>{
+  it('shares the 90-day technical-role policy across search, details, facets, and counts',async()=>{
     const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
-    const recent=new Date(Date.now()-86400000).toISOString(),old=new Date(Date.now()-65*86400000).toISOString();
+    const recent=new Date(Date.now()-86400000).toISOString(),old=new Date(Date.now()-95*86400000).toISOString();
     const titles=['Software Engineer','Data Analyst','AI/ML Engineer','Research Scientist','Retail Associate','Account Manager','Data Center Technician','Data Entry Clerk','Data Engineer','ML Engineer','Software Developer'];
     for(let i=0;i<titles.length;i++){
       const job=makeJob(SOURCES[0],{sourceJobId:'scope'+i,title:titles[i],applyUrl:'https://example.com/jobs/'+i,postedAt:i===8?old:i===9?null:i===10?new Date(Date.now()+86400000).toISOString():recent,description:'Uses AI software and data.'},recent)!;
@@ -40,6 +40,21 @@ describe('database-backed API',()=> {
     expect((await (await request(db,'/api/sources')).json() as any[]).find(s=>s.id==='meta').jobCount).toBe(4);
   });
 
+  it('lists one posting per repeated role and hides permanent roles',async()=>{
+    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    const day=(n:number)=>new Date(Date.now()-n*86400000).toISOString();
+    const add=(id:string,title:string,location:string,postedAt:string,employmentType='Contract')=>jobStatement(db,{...makeJob(SOURCES[0],{sourceJobId:id,title,location,applyUrl:'https://example.com/jobs/'+id,postedAt},day(0))!,employmentType}).run();
+    await add('a','Data Labeling Analyst II','Bell Gardens, CA',day(5));
+    await add('b','Data Labeling Analyst II','Bell Gardens, CA',day(2));
+    await add('c','data labeling analyst ii ','bell gardens, ca',day(9));
+    await add('d','Data Labeling Analyst II','Menlo Park, CA',day(3));
+    await add('e','Data Scientist','Remote',day(1),'Perm');
+    await add('f','Data Engineer','Remote',day(1),'Contract To Perm');
+    const feed=await (await request(db,'/api/jobs')).json() as any;
+    expect(feed.jobs.map((j:any)=>j.id).sort()).toEqual(['meta:b','meta:d','meta:f']);
+    expect((await (await request(db,'/api/overview')).json() as any).totalJobs).toBe(3);
+    expect((await request(db,'/api/jobs/meta:a')).status).toBe(404);
+  });
   it('provides pagination, multi-filter intersections, and safe literal search',async()=> {
     const db=sqliteD1();await ensureDB(db);
     const response=await request(db,'/api/jobs?mode=Remote&category=Engineering+%26+IT');

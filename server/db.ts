@@ -4,6 +4,7 @@ import * as schema from './schema.js';
 import { SOURCES } from './sources.js';
 import seed from './seed.json' with { type: 'json' };
 import type { Job, Feed } from '../src/types.js';
+import { feedCutoff, PERMANENT_TYPES } from './policy.js';
 
 const DDL = [
   'CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY,company TEXT NOT NULL,provider TEXT NOT NULL,url TEXT NOT NULL,country TEXT NOT NULL,status TEXT NOT NULL DEFAULT \'pending\',last_checked_at TEXT,last_success_at TEXT,message TEXT)',
@@ -53,17 +54,21 @@ export function hydrate(row: { data: string; first_seen_at?: string; last_seen_a
   return {...j,firstSeenAt:row.firstSeenAt || row.first_seen_at || j.firstSeenAt,lastSeenAt:row.lastSeenAt || row.last_seen_at || j.lastSeenAt,postedAt:row.postedAt || row.posted_at || j.postedAt,active:(row.active ?? 1)===1};
 }
 // One policy shared by listings, facets, detail URLs, and dashboard counts.
-export function feedScopeSql(alias='' , now=new Date()):string {
-  if(alias && !/^[a-z_]+$/.test(alias))throw new Error('Invalid SQL alias');
-  const prefix=alias?alias+'.':'';
-  const cutoff=new Date(now),day=cutoff.getUTCDate();
-  cutoff.setUTCDate(1);cutoff.setUTCMonth(cutoff.getUTCMonth()-1);
-  cutoff.setUTCDate(Math.min(day,new Date(Date.UTC(cutoff.getUTCFullYear(),cutoff.getUTCMonth()+1,0)).getUTCDate()));
+function baseScopeSql(prefix:string,now:Date):string {
   const title=`(' ' || lower(replace(replace(replace(replace(${prefix}title,'-',' '),'/',' '),'(',' '),')',' ')) || ' ')`;
   const terms=['software','developer','programmer','frontend','front end','backend','back end','full stack','fullstack','devops','devsecops','site reliability','sre','data','analytics','business intelligence','database','machine learning','deep learning','artificial intelligence','ai','ml','llm','nlp','computer vision','research','researcher','applied scientist','qa engineer','sdet','test automation','cloud engineer','platform engineer','bioinformatics','computational','statistician'];
   const related=terms.map(term=>`${title} LIKE '% ${term} %'`).join(' OR ');
+  const permanent=PERMANENT_TYPES.map(t=>`'${t}'`).join(',');
   // Datacenter facilities and data-entry clerical work are outside this technical feed.
-  return `(${prefix}active=1 AND julianday(${prefix}posted_at)>=julianday('${cutoff.toISOString()}') AND julianday(${prefix}posted_at)<=julianday('${now.toISOString()}') AND (${related}) AND ${title} NOT LIKE '% data center %' AND ${title} NOT LIKE '% datacenter %' AND ${title} NOT LIKE '% data entry %')`;
+  return `${prefix}active=1 AND julianday(${prefix}posted_at)>=julianday('${feedCutoff(now).toISOString()}') AND julianday(${prefix}posted_at)<=julianday('${now.toISOString()}') AND (${related}) AND ${title} NOT LIKE '% data center %' AND ${title} NOT LIKE '% datacenter %' AND ${title} NOT LIKE '% data entry %' AND lower(trim(coalesce(json_extract(${prefix}data,'$.employmentType'),''))) NOT IN (${permanent})`;
+}
+export function feedScopeSql(alias='' , now=new Date()):string {
+  if(alias && !/^[a-z_]+$/.test(alias))throw new Error('Invalid SQL alias');
+  const prefix=alias?alias+'.':'';
+  // Sources often repost one opening under several requisition IDs. Only the
+  // newest posting per company, title and location is listed.
+  const newest=`SELECT id FROM (SELECT id,row_number() OVER (PARTITION BY company,lower(trim(title)),lower(trim(location)) ORDER BY posted_at DESC,id DESC) AS rank FROM jobs WHERE ${baseScopeSql('',now)}) WHERE rank=1`;
+  return `(${baseScopeSql(prefix,now)} AND ${prefix}id IN (${newest}))`;
 }
 export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed> {
   const orm=drizzle(db),j=schema.jobs;
