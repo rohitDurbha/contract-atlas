@@ -6,8 +6,10 @@ Already shipped on Nov 3 and 4, 2026. Fifteen dead sources were retired (43 rema
 
 ## Items
 
+The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (stateless Streamable HTTP, no login).
+
 - [ ] 1. MCP server with more tools, so AI assistants such as Claude can use the feed.
-  - [ ] a. Add a read-only remote MCP server at `/api/mcp` on the existing Vercel function using the official TypeScript MCP SDK and Streamable HTTP. Tools `search_jobs`, `get_job` and `list_sources` read the bundled SQLite snapshot through the same feed policy the site uses. Add tests.
+  - [x] a. Add a read-only remote MCP server at `/api/mcp` on the existing Vercel function using the official TypeScript MCP SDK and Streamable HTTP. Tools `search_jobs`, `get_job` and `list_sources` read the bundled SQLite snapshot through the same feed policy the site uses. Add tests.
   - [ ] b. Add a `market_trends` tool that computes posting volume, top skills, categories and pay ranges over time from the snapshot in SQL.
   - [ ] c. Add an `estimate_pay` tool. Train a simple regression on roles that list hourly pay (title words, skills, category, location, company) during the refresh workflow, save the coefficients as JSON next to the snapshot, and return a range clearly labeled as an estimate.
   - [ ] d. Add a `match_resume` tool that takes resume text, ranks current roles by similarity (TF-IDF or small embeddings), explains the overlap and missing skills, and never stores the resume.
