@@ -15,7 +15,7 @@ Deployment instructions: [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md). The public de
 | Persistence | Public repository commits to `data/atlas.sqlite` |
 | Hosting | Vercel Hobby and its included public `vercel.app` URL |
 
-The workflow checks the 59 registered public company portals every two hours, updates and verifies the database, commits it, and publishes the next snapshot. Visitors keep using the previous deployment during collection and publishing. Scheduled start times can be delayed by GitHub; source timestamps show actual freshness.
+The workflow checks the 43 registered public company portals every two hours, updates and verifies the database, commits it, and publishes the next snapshot. Visitors keep using the previous deployment during collection and publishing. GitHub drops many scheduled runs when it is busy, so a small Cloudflare Worker in `dispatcher/` starts the workflow on time (see FREE-DEPLOYMENT.md). The feed lists contract roles posted in the last 90 days, collapses reposted openings, and leaves out permanent and direct-hire roles from mixed staffing boards.
 
 Registration does not mean every portal can be collected completely. The source directory reports complete, partial, blocked, pending, and failed coverage. Only actual public listings enter the feed. Login walls, access restrictions, and robots exclusions are respected. There are no fabricated roles or AI-generated listing data.
 

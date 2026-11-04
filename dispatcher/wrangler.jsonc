@@ -1,0 +1,12 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "contract-atlas-dispatcher",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-30",
+  "triggers": { "crons": ["7 */2 * * *"] },
+  "vars": {
+    "REPOSITORY": "rohitDurbha/contract-atlas",
+    "WORKFLOW": "refresh.yml",
+    "BRANCH": "main"
+  }
+}
