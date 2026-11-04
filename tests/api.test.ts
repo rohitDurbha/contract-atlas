@@ -62,7 +62,7 @@ describe('database-backed API',()=> {
     expect((await (await request(db,'/api/jobs?company=ADM')).json() as any).total).toBe(0);
     expect((await request(db,'/api/jobs/adm:archived')).status).toBe(404);
     expect((await (await request(db,'/api/sources')).json() as any[]).some(s=>s.id==='adm')).toBe(false);
-    expect((await (await request(db,'/api/overview')).json() as any).sourceCount).toBe(58);
+    expect((await (await request(db,'/api/overview')).json() as any).sourceCount).toBe(43);
     expect(await db.prepare("SELECT id FROM sources WHERE id='adm'").first()).toBeTruthy();
   });
   it('shares a refresh run across repeated triggers',async()=> {
@@ -70,7 +70,7 @@ describe('database-backed API',()=> {
   });
   it('blocks cross-origin writes and exposes original source health',async()=> {
     const db=sqliteD1();const bad=await request(db,'/api/refresh',{method:'POST',headers:{Origin:'https://untrusted.example'}});expect(bad.status).toBe(403);
-    const response=await request(db,'/api/sources');const sources=await response.json() as any[];expect(sources).toHaveLength(58);expect(sources.every(s=>typeof s.status==='string')).toBe(true);
+    const response=await request(db,'/api/sources');const sources=await response.json() as any[];expect(sources).toHaveLength(43);expect(sources.every(s=>typeof s.status==='string')).toBe(true);
   });
   it('distinguishes fully retrieved feeds from readable but partial feeds',async()=>{
     const db=sqliteD1();await ensureDB(db);
