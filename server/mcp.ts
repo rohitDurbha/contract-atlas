@@ -4,6 +4,7 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { getFeedJob, jobFeed, listSources } from './db.js';
+import { marketTrends, MAX_TREND_WEEKS } from './trends.js';
 import type { Job } from '../src/types.js';
 
 const SERVER_INFO = { name: 'contract-atlas', title: 'Contract Atlas', version: '1.0.0' };
@@ -61,7 +62,7 @@ function result(data: Record<string, unknown>) {
 
 export function buildMcpServer(db: D1Database): McpServer {
   const server = new McpServer(SERVER_INFO, {
-    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are.',
+    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, and market_trends for posting volume, skill demand, category mix and hourly pay ranges over time.',
   });
 
   server.registerTool('search_jobs', {
@@ -99,6 +100,18 @@ export function buildMcpServer(db: D1Database): McpServer {
     const sources = await listSources(db);
     return result({ count: sources.length, sources });
   });
+
+  server.registerTool('market_trends', {
+    title: 'Contract market trends',
+    description: 'Summarize the contract market over recent weeks. Returns weekly posting volume, the category mix, the most requested skills with recent versus prior demand, and hourly pay ranges (min, quartiles, median, max) per currency, overall and by category. Optionally narrow to one category or company.',
+    inputSchema: z.object({
+      weeks: z.number().int().min(1).max(MAX_TREND_WEEKS).optional().describe(`How many weeks back to look, up to ${MAX_TREND_WEEKS}. Defaults to 12.`),
+      category: z.string().trim().min(1).max(100).optional().describe('Exact category as returned in the search_jobs facets.'),
+      company: z.string().trim().min(1).max(100).optional().describe('Exact company name as returned in the search_jobs facets.'),
+      skillLimit: z.number().int().min(1).max(50).optional().describe('How many top skills to return. Defaults to 15.'),
+    }),
+    annotations: READ_ONLY,
+  }, async input => result({ ...await marketTrends(db, input) }));
 
   return server;
 }

@@ -44,15 +44,16 @@ describe('MCP server on a controlled database', () => {
   });
   afterAll(() => sqlite.close());
 
-  it('lists the three read-only tools with input schemas', async () => {
+  it('lists the four read-only tools with input schemas', async () => {
     const { result } = await rpc(handler.fetch, 'https://atlas.test/api/mcp', 'tools/list');
     const tools = Object.fromEntries(result.tools.map((t: any) => [t.name, t]));
-    expect(Object.keys(tools).sort()).toEqual(['get_job', 'list_sources', 'search_jobs']);
+    expect(Object.keys(tools).sort()).toEqual(['get_job', 'list_sources', 'market_trends', 'search_jobs']);
     for (const tool of Object.values(tools) as any[]) {
       expect(tool.annotations.readOnlyHint).toBe(true);
       expect(tool.inputSchema.type).toBe('object');
     }
     expect(tools.search_jobs.inputSchema.properties).toHaveProperty('query');
+    expect(Object.keys(tools.market_trends.inputSchema.properties).sort()).toEqual(['category', 'company', 'skillLimit', 'weeks']);
   });
 
   it('searches with the same feed policy and filters as the website', async () => {
@@ -90,6 +91,18 @@ describe('MCP server on a controlled database', () => {
     }
   });
 
+  it('summarizes market trends over the same feed', async () => {
+    const trends = (await callTool(handler.fetch, 'market_trends', { skillLimit: 3 })).structuredContent;
+    expect(trends.window.weeks).toBe(12);
+    expect(trends.totals).toEqual({ roles: 3, companies: 2, withHourlyPay: 1 });
+    expect(trends.volume.reduce((sum: number, week: any) => sum + week.roles, 0)).toBe(3);
+    expect(trends.topSkills.length).toBeLessThanOrEqual(3);
+    expect(trends.pay.overall).toEqual([{ currency: 'USD', roles: 1, min: 80, p25: 80, median: 80, p75: 80, max: 80 }]);
+    const ml = (await callTool(handler.fetch, 'market_trends', { company: SOURCES[1].company })).structuredContent;
+    expect(ml.totals.roles).toBe(1);
+    expect((await callTool(handler.fetch, 'market_trends', { weeks: 0 })).isError).toBe(true);
+  });
+
   it('lists sources with live role counts', async () => {
     const { count, sources } = (await callTool(handler.fetch, 'list_sources')).structuredContent;
     expect(count).toBe(SOURCES.length);
@@ -110,6 +123,10 @@ describe('MCP endpoint on the public Vercel function', () => {
     const feed = await (await publicAPI.fetch(new Request('https://atlas.test/api/index?__atlasRoute=jobs'))).json() as any;
     expect(search.result.structuredContent.total).toBe(feed.total);
     expect(search.result.structuredContent.jobs[0].id).toBe(feed.jobs[0].id);
+
+    const trends = await rpc(publicAPI.fetch, url, 'tools/call', { name: 'market_trends', arguments: { weeks: 13 } });
+    expect(trends.result.structuredContent.totals.roles).toBeGreaterThan(0);
+    expect(trends.result.structuredContent.totals.roles).toBeLessThanOrEqual(feed.total);
   });
 
   it('does not open sessions or accept writes on the REST API', async () => {
