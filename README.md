@@ -82,6 +82,7 @@ AI assistants such as Claude can search the feed through a read-only Model Conte
 | `search_jobs` | Matching roles with short summaries, the total count and filter facets, using the same filters as the website |
 | `get_job` | One role with its full description, skills, pay and apply link |
 | `list_sources` | Every job board in the feed with its health, coverage and current role count |
+| `market_trends` | Weekly posting volume, the category mix, the most requested skills with recent versus prior demand, and hourly pay quartiles per currency, overall and by category. Accepts `weeks` (up to 14), `category`, `company` and `skillLimit` |
 
 Every tool reads the bundled snapshot through the same feed policy as the site, so an assistant sees exactly what a visitor would. When `npm run dev:api` is running, the same server is available locally at `http://127.0.0.1:8787/api/mcp`. More tools and full client setup guides are planned in [ROADMAP.md](ROADMAP.md).
 
