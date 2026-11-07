@@ -20,7 +20,7 @@ Every listing comes from a real public posting. The collector respects robots.tx
 | --- | --- |
 | Frontend | React, TypeScript, Vite, Tailwind CSS and TanStack Query |
 | API | Hono running as a Vercel Node.js function |
-| Data | A read-only SQLite snapshot in `data/atlas.sqlite` that ships with the function |
+| Data | A read-only SQLite snapshot in `data/atlas.sqlite` and the pay model coefficients in `data/pay-model.json`, both shipped with the function |
 | Collector | TypeScript source adapters that run in GitHub Actions |
 | Scheduler | GitHub Actions cron with a Cloudflare Worker that starts runs on time |
 | Hosting | Vercel Hobby with the included `vercel.app` domain |
@@ -83,6 +83,9 @@ AI assistants such as Claude can search the feed through a read-only Model Conte
 | `get_job` | One role with its full description, skills, pay and apply link |
 | `list_sources` | Every job board in the feed with its health, coverage and current role count |
 | `market_trends` | Weekly posting volume, the category mix, the most requested skills with recent versus prior demand, and hourly pay quartiles per currency, overall and by category. Accepts `weeks` (up to 14), `category`, `company` and `skillLimit` |
+| `estimate_pay` | A modelled hourly range (low, mid and high) for a role described by `title`, `skills`, `category`, `location`, `country`, `workMode` and `company`, or for a current role by `id`. It also returns the features that moved the figure most, inputs the model has not seen and the model's held-out error |
+
+The pay estimate comes from a ridge regression on the log of every listed hourly rate in the feed, one model per currency, using title words, skills, category, location, work mode and company as features. The refresh workflow refits it after each collection and saves only the coefficients to `data/pay-model.json`, which ships beside the snapshot, so an estimate costs nothing to serve. About a fifth of the paid roles are held out before the final fit, and their error sets the reported range and accuracy figures. The answer is always labelled as an estimate, and currencies with fewer than 40 listed rates are not modelled.
 
 Every tool reads the bundled snapshot through the same feed policy as the site, so an assistant sees exactly what a visitor would. When `npm run dev:api` is running, the same server is available locally at `http://127.0.0.1:8787/api/mcp`. More tools and full client setup guides are planned in [ROADMAP.md](ROADMAP.md).
 
