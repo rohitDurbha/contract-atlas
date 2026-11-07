@@ -5,6 +5,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { getFeedJob, jobFeed, listSources } from './db.js';
 import { marketTrends, MAX_TREND_WEEKS } from './trends.js';
+import { estimatePay, type PayFeatures, type PayModel } from './pay-model.js';
 import type { Job } from '../src/types.js';
 
 const SERVER_INFO = { name: 'contract-atlas', title: 'Contract Atlas', version: '1.0.0' };
@@ -60,9 +61,28 @@ function result(data: Record<string, unknown>) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }], structuredContent: data };
 }
 
-export function buildMcpServer(db: D1Database): McpServer {
+export interface AtlasMcpOptions {
+  // Returns the pay model trained during the last refresh, or null when none ships.
+  payModel?: () => PayModel | null;
+}
+
+export const estimatePayInput = z.object({
+  id: z.string().trim().min(1).max(200).optional().describe('Estimate for a current role by its search_jobs id. Its title, skills, category, location and company are used, and any other fields given here override them.'),
+  title: z.string().trim().min(2).max(150).optional().describe('Role title, for example "Senior Data Engineer". Required unless id is given.'),
+  skills: z.array(z.string().trim().min(1).max(60)).max(20).optional().describe('Skills such as ["Python","SQL"].'),
+  category: z.string().trim().min(1).max(100).optional().describe('Exact category as returned in the search_jobs facets.'),
+  location: z.string().trim().min(1).max(100).optional().describe('Location such as "Seattle, WA". A US state or Canadian province code helps most.'),
+  country: z.string().trim().min(2).max(3).optional().describe('Two-letter country code such as "US".'),
+  workMode: z.enum(['Remote', 'Hybrid', 'On-site']).optional(),
+  company: z.string().trim().min(1).max(100).optional().describe('Exact company name as returned in the search_jobs facets.'),
+  currency: z.string().trim().length(3).toUpperCase().optional().describe('Currency to estimate in. Defaults to USD. Only currencies with enough listed rates have a model.'),
+});
+
+const errorResult = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
+
+export function buildMcpServer(db: D1Database, options: AtlasMcpOptions = {}): McpServer {
   const server = new McpServer(SERVER_INFO, {
-    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, and market_trends for posting volume, skill demand, category mix and hourly pay ranges over time.',
+    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, market_trends for posting volume, skill demand, category mix and hourly pay ranges over time, and estimate_pay for a modelled hourly range when a role does not list pay.',
   });
 
   server.registerTool('search_jobs', {
@@ -113,13 +133,39 @@ export function buildMcpServer(db: D1Database): McpServer {
     annotations: READ_ONLY,
   }, async input => result({ ...await marketTrends(db, input) }));
 
+  server.registerTool('estimate_pay', {
+    title: 'Estimate hourly pay',
+    description: 'Estimate an hourly pay range for a contract role from its title, skills, category, location and company, or for a current role by id. The figures come from a regression trained on roles that list hourly pay and are an estimate, not a quote. Returns low, mid and high, the features that moved the estimate most, inputs the model has not seen, and the model\'s held-out error.',
+    inputSchema: estimatePayInput,
+    annotations: READ_ONLY,
+  }, async input => {
+    const model = options.payModel?.() ?? null;
+    if (!model) return errorResult('No pay model is available yet. It is trained during the next scheduled refresh.');
+    const currency = input.currency ?? 'USD';
+    if (!model.currencies[currency]) return errorResult(`There are not enough listed ${currency} hourly rates to estimate pay. Available currencies are ${Object.keys(model.currencies).join(', ') || 'none'}.`);
+    let features: PayFeatures | null = null, listed: string | null = null, role: Record<string, unknown> | null = null;
+    if (input.id) {
+      const job = await getFeedJob(db, input.id);
+      if (!job) return errorResult(`No current role has the id "${input.id}". It may have closed or aged out of the 90-day window.`);
+      features = { title: job.title, skills: job.skills, category: job.category, location: job.location, country: job.country, workMode: job.workMode, company: job.company };
+      listed = pay(job);
+      role = { id: job.id, title: job.title, company: job.company, location: job.location };
+    }
+    const { id: _id, currency: _currency, ...given } = input;
+    const defined = Object.fromEntries(Object.entries(given).filter(([, value]) => value !== undefined));
+    features = { ...(features ?? { title: '' }), ...defined };
+    if (!features.title) return errorResult('Give a role title or the id of a current role.');
+    const estimate = estimatePay(model, features, currency)!;
+    return result({ ...(role ? { role, listedPay: listed } : {}), estimate });
+  });
+
   return server;
 }
 
 // Stateless Streamable HTTP handler. A fresh server is built per request, which
 // suits a serverless function that keeps no session state between calls.
-export function createAtlasMcpHandler(db: D1Database) {
-  return createMcpHandler(() => buildMcpServer(db), {
+export function createAtlasMcpHandler(db: D1Database, options: AtlasMcpOptions = {}) {
+  return createMcpHandler(() => buildMcpServer(db, options), {
     onerror: error => console.error(JSON.stringify({ level: 'error', message: error.message, path: '/api/mcp', timestamp: new Date().toISOString() })),
   });
 }

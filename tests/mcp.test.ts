@@ -4,6 +4,7 @@ import { ensureDB, jobStatement } from '../server/db';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
 import { createAtlasMcpHandler } from '../server/mcp';
+import { featureKeys, trainCurrency, type PayModel } from '../server/pay-model';
 import publicAPI from '../api/index';
 
 type Fetch = (request: Request) => Promise<Response>;
@@ -25,9 +26,16 @@ async function rpc(fetch: Fetch, url: string, method: string, params: Record<str
 const callTool = async (fetch: Fetch, name: string, args: Record<string, unknown> = {}) =>
   (await rpc(fetch, 'https://atlas.test/api/mcp', 'tools/call', { name, arguments: args })).result;
 
+// A small USD model where senior titles and Washington pay more.
+const examples = Array.from({ length: 120 }, (_, i) => {
+  const senior = i % 2 === 0, wa = i % 3 === 0;
+  return { id: 'r' + i, keys: featureKeys({ title: `${senior ? 'Senior ' : ''}${i % 4 < 2 ? 'Software' : 'Data'} Engineer`, location: wa ? 'Seattle, WA' : 'Austin, TX' }), logPay: Math.log(60 * (senior ? 1.3 : 1) * (wa ? 1.2 : 1)) };
+});
+const payModel: PayModel = { version: 1, trainedAt: '2026-11-06T00:00:00.000Z', windowDays: 90, features: { minSupport: 5, maxFeatures: 600, lambda: 4 }, currencies: { USD: trainCurrency('USD', examples)! } };
+
 describe('MCP server on a controlled database', () => {
   const sqlite = openSQLite(':memory:');
-  const handler = createAtlasMcpHandler(sqlite.db);
+  const handler = createAtlasMcpHandler(sqlite.db, { payModel: () => payModel });
   const recent = new Date(Date.now() - 86_400_000).toISOString();
   const old = new Date(Date.now() - 120 * 86_400_000).toISOString();
 
@@ -44,10 +52,10 @@ describe('MCP server on a controlled database', () => {
   });
   afterAll(() => sqlite.close());
 
-  it('lists the four read-only tools with input schemas', async () => {
+  it('lists the five read-only tools with input schemas', async () => {
     const { result } = await rpc(handler.fetch, 'https://atlas.test/api/mcp', 'tools/list');
     const tools = Object.fromEntries(result.tools.map((t: any) => [t.name, t]));
-    expect(Object.keys(tools).sort()).toEqual(['get_job', 'list_sources', 'market_trends', 'search_jobs']);
+    expect(Object.keys(tools).sort()).toEqual(['estimate_pay', 'get_job', 'list_sources', 'market_trends', 'search_jobs']);
     for (const tool of Object.values(tools) as any[]) {
       expect(tool.annotations.readOnlyHint).toBe(true);
       expect(tool.inputSchema.type).toBe('object');
@@ -101,6 +109,45 @@ describe('MCP server on a controlled database', () => {
     const ml = (await callTool(handler.fetch, 'market_trends', { company: SOURCES[1].company })).structuredContent;
     expect(ml.totals.roles).toBe(1);
     expect((await callTool(handler.fetch, 'market_trends', { weeks: 0 })).isError).toBe(true);
+  });
+
+  it('estimates hourly pay from a description and labels it as an estimate', async () => {
+    const senior = (await callTool(handler.fetch, 'estimate_pay', { title: 'Senior Software Engineer', location: 'Seattle, WA', skills: ['Haskell'] })).structuredContent;
+    const { estimate } = senior;
+    expect(estimate.currency).toBe('USD');
+    expect(estimate.period).toBe('hour');
+    expect(estimate.label).toMatch(/^Estimate only/);
+    expect(estimate.low).toBeLessThanOrEqual(estimate.mid);
+    expect(estimate.high).toBeGreaterThanOrEqual(estimate.mid);
+    expect(estimate.mid).toBeGreaterThan(85);
+    expect(estimate.mid).toBeLessThan(100);
+    expect(estimate.unmatched).toContain('skill haskell');
+    expect(estimate.basis.trainingRoles).toBe(120);
+    expect(senior.role).toBeUndefined();
+    const junior = (await callTool(handler.fetch, 'estimate_pay', { title: 'Software Engineer', location: 'Austin, TX' })).structuredContent.estimate;
+    expect(junior.mid).toBeLessThan(estimate.mid / 1.3);
+  });
+
+  it('estimates pay for a current role by id and shows its listed pay', async () => {
+    const byId = (await callTool(handler.fetch, 'estimate_pay', { id: `${SOURCES[0].id}:eng` })).structuredContent;
+    expect(byId.role).toMatchObject({ id: `${SOURCES[0].id}:eng`, title: 'Software Engineer', location: 'Seattle, WA' });
+    expect(byId.listedPay).toBe('USD 70-90 per hour');
+    expect(byId.estimate.drivers.map((d: any) => d.feature)).toContain('region WA');
+    // Fields given alongside the id override the role's own.
+    const moved = (await callTool(handler.fetch, 'estimate_pay', { id: `${SOURCES[0].id}:eng`, location: 'Austin, TX' })).structuredContent;
+    expect(moved.estimate.mid).toBeLessThan(byId.estimate.mid);
+  });
+
+  it('reports missing inputs, unknown roles and unsupported currencies as errors', async () => {
+    expect((await callTool(handler.fetch, 'estimate_pay', {})).content[0].text).toContain('title');
+    expect((await callTool(handler.fetch, 'estimate_pay', { id: `${SOURCES[1].id}:retail` })).isError).toBe(true);
+    const eur = await callTool(handler.fetch, 'estimate_pay', { title: 'Data Engineer', currency: 'eur' });
+    expect(eur.isError).toBe(true);
+    expect(eur.content[0].text).toContain('USD');
+    const untrained = createAtlasMcpHandler(sqlite.db);
+    const none = await callTool(untrained.fetch, 'estimate_pay', { title: 'Data Engineer' });
+    expect(none.isError).toBe(true);
+    expect(none.content[0].text).toContain('No pay model');
   });
 
   it('lists sources with live role counts', async () => {
