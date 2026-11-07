@@ -2,6 +2,8 @@ import { SOURCES } from '../server/sources';
 import { resolve } from 'node:path';
 import { openSQLite } from '../server/sqlite';
 import { freeFetch } from '../server/free-runtime';
+import { readFile } from 'node:fs/promises';
+import { isPayModel } from '../server/pay-model';
 const {db,close}=openSQLite(resolve('data/atlas.sqlite'),true);
 try {
   const integrity=await db.prepare('PRAGMA quick_check').first<string>('quick_check');
@@ -16,5 +18,9 @@ try {
     if(path==='/api/overview' && (!data.totalJobs || !data.lastRun || data.lastRun.status==='running' || data.lastRun.status==='failed'))throw new Error('Snapshot has no active roles or no finished usable refresh.');
     console.log(JSON.stringify({path,total:data.totalJobs??data.total??data.length}));
   }
+  const payModel=JSON.parse(await readFile('data/pay-model.json','utf8'));
+  if(!isPayModel(payModel))throw new Error('Pay model is missing or has an unexpected shape.');
+  if(!payModel.currencies.USD)console.warn('Pay model has no USD currency; estimate_pay will report that it cannot estimate USD.');
+  console.log(JSON.stringify({payModel:Object.fromEntries(Object.entries(payModel.currencies).map(([c,m])=>[c,{roles:m.roles,features:Object.keys(m.weights).length}]))}));
   const write=await fetcher(new Request('https://atlas.test/api/refresh',{method:'POST'}));if(write.status!==405)throw new Error('Public API must be read-only.');
 }finally{close();}

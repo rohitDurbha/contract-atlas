@@ -6,7 +6,7 @@
   "installCommand": "npm ci",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "data/atlas.sqlite",
+      "includeFiles": "data/{atlas.sqlite,pay-model.json}",
       "maxDuration": 30
     }
   },
