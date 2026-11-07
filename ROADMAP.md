@@ -11,7 +11,7 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
 - [ ] 1. MCP server with more tools, so AI assistants such as Claude can use the feed.
   - [x] a. Add a read-only remote MCP server at `/api/mcp` on the existing Vercel function using the official TypeScript MCP SDK and Streamable HTTP. Tools `search_jobs`, `get_job` and `list_sources` read the bundled SQLite snapshot through the same feed policy the site uses. Add tests.
   - [x] b. Add a `market_trends` tool that computes posting volume, top skills, categories and pay ranges over time from the snapshot in SQL.
-  - [ ] c. Add an `estimate_pay` tool. Train a simple regression on roles that list hourly pay (title words, skills, category, location, company) during the refresh workflow, save the coefficients as JSON next to the snapshot, and return a range clearly labeled as an estimate.
+  - [x] c. Add an `estimate_pay` tool. Train a simple regression on roles that list hourly pay (title words, skills, category, location, company) during the refresh workflow, save the coefficients as JSON next to the snapshot, and return a range clearly labeled as an estimate.
   - [ ] d. Add a `match_resume` tool that takes resume text, ranks current roles by similarity (TF-IDF or small embeddings), explains the overlap and missing skills, and never stores the resume.
   - [ ] e. Document the server in the README with connection steps for Claude and other clients, add a `server.json`, and prepare publishing to the official MCP Registry.
 - [ ] 2. Delete the unused Randstad and LiveHire adapter code and their tests.
