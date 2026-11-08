@@ -52,10 +52,10 @@ describe('MCP server on a controlled database', () => {
   });
   afterAll(() => sqlite.close());
 
-  it('lists the five read-only tools with input schemas', async () => {
+  it('lists the six read-only tools with input schemas', async () => {
     const { result } = await rpc(handler.fetch, 'https://atlas.test/api/mcp', 'tools/list');
     const tools = Object.fromEntries(result.tools.map((t: any) => [t.name, t]));
-    expect(Object.keys(tools).sort()).toEqual(['estimate_pay', 'get_job', 'list_sources', 'market_trends', 'search_jobs']);
+    expect(Object.keys(tools).sort()).toEqual(['estimate_pay', 'get_job', 'list_sources', 'market_trends', 'match_resume', 'search_jobs']);
     for (const tool of Object.values(tools) as any[]) {
       expect(tool.annotations.readOnlyHint).toBe(true);
       expect(tool.inputSchema.type).toBe('object');
@@ -150,6 +150,29 @@ describe('MCP server on a controlled database', () => {
     expect(none.content[0].text).toContain('No pay model');
   });
 
+  it('matches resume text to current roles without storing it', async () => {
+    const marker = 'Zyxwvut Quillfeather';
+    const text = `${marker}. Data engineer who builds data pipelines in Python and SQL, with Airflow orchestration and Snowflake warehousing on AWS.`;
+    const found = (await callTool(handler.fetch, 'match_resume', { resumeText: text, limit: 2 })).structuredContent;
+    expect(found.rolesCompared).toBe(3);
+    expect(found.matches).toHaveLength(2);
+    expect(found.matches[0].title).toBe('Data Engineer');
+    expect(found.matches[0]).toMatchObject({ id: `${SOURCES[0].id}:remote`, company: SOURCES[0].company, applyUrl: 'https://example.com/jobs/remote' });
+    expect(found.matches[0].matchedSkills).toEqual(expect.arrayContaining(['Python', 'SQL']));
+    expect(found.matches[0].similarity).toBeGreaterThan(found.matches[1].similarity);
+    expect(found.resume.skills).toEqual(expect.arrayContaining(['Python', 'SQL', 'Airflow', 'Snowflake', 'AWS']));
+    expect(found.notes.join(' ')).toContain('not stored');
+    expect(JSON.stringify(found)).not.toContain(marker);
+    const remote = (await callTool(handler.fetch, 'match_resume', { resumeText: text, workMode: 'Remote' })).structuredContent;
+    expect(remote.matches.map((m: any) => m.id)).toEqual([`${SOURCES[0].id}:remote`]);
+    // Nothing from the resume reaches the database.
+    for (const table of ['jobs', 'sources', 'settings', 'runs', 'source_coverage', 'leases']) {
+      const rows = (await sqlite.db.prepare(`SELECT * FROM ${table}`).all()).results;
+      expect(JSON.stringify(rows)).not.toContain(marker);
+    }
+    expect((await callTool(handler.fetch, 'match_resume', { resumeText: 'too short' })).isError).toBe(true);
+  });
+
   it('lists sources with live role counts', async () => {
     const { count, sources } = (await callTool(handler.fetch, 'list_sources')).structuredContent;
     expect(count).toBe(SOURCES.length);
@@ -174,6 +197,10 @@ describe('MCP endpoint on the public Vercel function', () => {
     const trends = await rpc(publicAPI.fetch, url, 'tools/call', { name: 'market_trends', arguments: { weeks: 13 } });
     expect(trends.result.structuredContent.totals.roles).toBeGreaterThan(0);
     expect(trends.result.structuredContent.totals.roles).toBeLessThanOrEqual(feed.total);
+
+    const match = await rpc(publicAPI.fetch, url, 'tools/call', { name: 'match_resume', arguments: { resumeText: 'Software engineer with Python, SQL, AWS and React experience building data pipelines and web services.', limit: 3 } });
+    expect(match.result.structuredContent.rolesCompared).toBe(feed.total);
+    expect(match.result.structuredContent.matches.length).toBeGreaterThan(0);
   });
 
   it('does not open sessions or accept writes on the REST API', async () => {
