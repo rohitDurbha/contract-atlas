@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getFeedJob, jobFeed, listSources } from './db.js';
 import { marketTrends, MAX_TREND_WEEKS } from './trends.js';
 import { estimatePay, type PayFeatures, type PayModel } from './pay-model.js';
+import { matchResume, MAX_MATCHES, MAX_RESUME_CHARS, MIN_RESUME_CHARS } from './resume-match.js';
 import type { Job } from '../src/types.js';
 
 const SERVER_INFO = { name: 'contract-atlas', title: 'Contract Atlas', version: '1.0.0' };
@@ -82,7 +83,7 @@ const errorResult = (text: string) => ({ content: [{ type: 'text' as const, text
 
 export function buildMcpServer(db: D1Database, options: AtlasMcpOptions = {}): McpServer {
   const server = new McpServer(SERVER_INFO, {
-    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, market_trends for posting volume, skill demand, category mix and hourly pay ranges over time, and estimate_pay for a modelled hourly range when a role does not list pay.',
+    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, market_trends for posting volume, skill demand, category mix and hourly pay ranges over time, estimate_pay for a modelled hourly range when a role does not list pay, and match_resume to rank current roles against resume text.',
   });
 
   server.registerTool('search_jobs', {
@@ -157,6 +158,28 @@ export function buildMcpServer(db: D1Database, options: AtlasMcpOptions = {}): M
     if (!features.title) return errorResult('Give a role title or the id of a current role.');
     const estimate = estimatePay(model, features, currency)!;
     return result({ ...(role ? { role, listedPay: listed } : {}), estimate });
+  });
+
+  server.registerTool('match_resume', {
+    title: 'Match a resume to current roles',
+    description: 'Rank current contract roles by how closely they match pasted resume text, using TF-IDF similarity over each role\'s title, skills and description. Each match lists the skills it shares with the resume, the skills it asks for that the resume does not mention, and the terms that drove the score. Also returns the most common missing skills across the matches. The resume is used only for this call and is never stored or logged.',
+    inputSchema: z.object({
+      resumeText: z.string().trim().min(MIN_RESUME_CHARS).max(MAX_RESUME_CHARS * 2).describe(`Plain resume text, at least ${MIN_RESUME_CHARS} characters. Only the first ${MAX_RESUME_CHARS} characters are compared.`),
+      limit: z.number().int().min(1).max(MAX_MATCHES).optional().describe(`How many roles to return, up to ${MAX_MATCHES}. Defaults to 10.`),
+      category: z.string().trim().min(1).max(100).optional().describe('Exact category as returned in the search_jobs facets.'),
+      workMode: z.enum(['Remote', 'Hybrid', 'On-site']).optional(),
+      location: z.string().trim().min(1).max(100).optional().describe('Part of a location name, for example "Seattle" or "Remote".'),
+    }),
+    annotations: READ_ONLY,
+  }, async ({ resumeText, ...options }) => {
+    const found = await matchResume(db, resumeText, options);
+    return result({
+      rolesCompared: found.rolesCompared,
+      resume: found.resume,
+      matches: found.matches.map(({ job, ...match }) => ({ ...summary(job), ...match })),
+      skillGaps: found.skillGaps,
+      notes: found.notes,
+    });
   });
 
   return server;
