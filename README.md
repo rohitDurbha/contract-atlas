@@ -75,7 +75,7 @@ The public API is read-only. Write requests to the REST endpoints return 405, an
 
 ## MCP server
 
-AI assistants such as Claude can search the feed through a read-only Model Context Protocol server at `https://contract-atlas-amber.vercel.app/api/mcp`. It uses stateless Streamable HTTP and needs no login, so any MCP client that supports remote servers can connect to that URL directly. In Claude you can add it as a custom connector with that address.
+AI assistants such as Claude can search the feed through a read-only Model Context Protocol server at `https://contract-atlas-amber.vercel.app/api/mcp`. It uses stateless Streamable HTTP and needs no login or API key, so any MCP client that supports remote servers can connect to that URL directly. Its registry name is `io.github.rohitDurbha/contract-atlas`, and [server.json](server.json) holds the metadata the official MCP Registry lists.
 
 | Tool | What it returns |
 | --- | --- |
@@ -90,7 +90,57 @@ The pay estimate comes from a ridge regression on the log of every listed hourly
 
 Resume matching uses TF-IDF cosine similarity between the resume and each listed role's title, skills and description, with title words counting most. Skills are found by name against a list of common technical skills plus each role's own listed skills, so the shared and missing lists explain the score in plain terms. The resume text is held in memory only for the call that uses it. It is never written to the database or a log, and only roles inside the public feed are compared.
 
-Every tool reads the bundled snapshot through the same feed policy as the site, so an assistant sees exactly what a visitor would. When `npm run dev:api` is running, the same server is available locally at `http://127.0.0.1:8787/api/mcp`. More tools and full client setup guides are planned in [ROADMAP.md](ROADMAP.md).
+Every tool reads the bundled snapshot through the same feed policy as the site, so an assistant sees exactly what a visitor would. When `npm run dev:api` is running, the same server is available locally at `http://127.0.0.1:8787/api/mcp`, and every setup below works with that address too.
+
+### Connecting a client
+
+**Claude on the web and in the desktop app.** Open Settings, go to Connectors and choose Add custom connector. Give it the name Contract Atlas, paste `https://contract-atlas-amber.vercel.app/api/mcp` as the URL and leave the authentication fields empty. Turn the connector on in a chat from the tools menu and Claude will call the tools when a question is about contract roles.
+
+**Claude Code.** Run this once and the tools show up in every session.
+
+```bash
+claude mcp add --transport http contract-atlas https://contract-atlas-amber.vercel.app/api/mcp
+```
+
+**VS Code.** Add the server to `.vscode/mcp.json` in a workspace, or run MCP Add Server from the command palette and pick HTTP.
+
+```json
+{
+  "servers": {
+    "contract-atlas": { "type": "http", "url": "https://contract-atlas-amber.vercel.app/api/mcp" }
+  }
+}
+```
+
+**Cursor.** Add the server to `~/.cursor/mcp.json`, or to `.cursor/mcp.json` inside a project.
+
+```json
+{
+  "mcpServers": {
+    "contract-atlas": { "url": "https://contract-atlas-amber.vercel.app/api/mcp" }
+  }
+}
+```
+
+**Clients that only start local servers.** Older clients that can only launch a command over stdio can reach the remote server through the `mcp-remote` bridge, which needs Node.js 18 or newer.
+
+```json
+{
+  "mcpServers": {
+    "contract-atlas": { "command": "npx", "args": ["-y", "mcp-remote", "https://contract-atlas-amber.vercel.app/api/mcp"] }
+  }
+}
+```
+
+**Trying the tools by hand.** Run `npx @modelcontextprotocol/inspector`, choose Streamable HTTP as the transport, enter the URL and press Connect. The inspector lists the six tools and lets you call each one with your own arguments.
+
+Once a client is connected you can ask things like "Find remote data engineering contracts posted this week", "What skills are growing fastest in the last month?", "What should a senior Python developer in Seattle expect to earn per hour?" or "Here is my resume, which current roles fit me best and what am I missing?"
+
+### Publishing to the MCP Registry
+
+The [Publish to MCP Registry](.github/workflows/publish-mcp.yml) workflow lists the server in the official registry so clients that browse it can find Contract Atlas by name. It runs only when started by hand from the Actions tab. It checks the code, confirms that the live endpoint answers an MCP `initialize` request and then publishes `server.json` with `mcp-publisher`, signing in through GitHub OIDC so no secret is needed. The registry only accepts a version once, so a later release needs a higher `version` in `server.json` and the same number in `SERVER_INFO` inside `server/mcp.ts`. A test keeps those two values, the endpoint address and this README in agreement.
+
+To publish from a laptop instead, install `mcp-publisher`, run `mcp-publisher login github` from the repository root and approve the device login as the `rohitDurbha` GitHub account, and then run `mcp-publisher publish`.
 
 ## Deployment setup
 
