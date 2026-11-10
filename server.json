@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.rohitDurbha/contract-atlas",
+  "title": "Contract Atlas",
+  "description": "Search recent tech contract roles, market trends, hourly pay estimates and resume matches.",
+  "version": "1.0.0",
+  "websiteUrl": "https://contract-atlas-amber.vercel.app",
+  "repository": {
+    "url": "https://github.com/rohitDurbha/contract-atlas",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://contract-atlas-amber.vercel.app/api/mcp"
+    }
+  ]
+}

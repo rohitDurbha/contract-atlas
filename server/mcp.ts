@@ -9,7 +9,7 @@ import { estimatePay, type PayFeatures, type PayModel } from './pay-model.js';
 import { matchResume, MAX_MATCHES, MAX_RESUME_CHARS, MIN_RESUME_CHARS } from './resume-match.js';
 import type { Job } from '../src/types.js';
 
-const SERVER_INFO = { name: 'contract-atlas', title: 'Contract Atlas', version: '1.0.0' };
+export const SERVER_INFO = { name: 'contract-atlas', title: 'Contract Atlas', version: '1.0.0' };
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const SUMMARY_CHARS = 280;
 
