@@ -1,0 +1,44 @@
+name: Publish to MCP Registry
+# Lists the hosted MCP server in the official MCP Registry using server.json.
+# It only runs when started by hand from the Actions tab, and it signs in with
+# GitHub OIDC, so no token or secret is needed. Bump "version" in server.json
+# and SERVER_INFO in server/mcp.ts before running it again for a new release.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci
+      - name: Check code and the registry manifest
+        run: npm run typecheck && npm test
+      - name: Confirm the live endpoint answers MCP requests
+        run: |
+          url=$(jq -r '.remotes[0].url' server.json)
+          curl -fsS "$url" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"registry-check","version":"1.0.0"}}}' \
+            | grep -q '"serverInfo"'
+      - name: Install mcp-publisher
+        run: |
+          os=$(uname -s | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_${os}_${arch}.tar.gz" | tar xz mcp-publisher
+      - name: Sign in to the registry with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server.json
+        run: ./mcp-publisher publish
