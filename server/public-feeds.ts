@@ -68,53 +68,6 @@ export async function magnitFeed(source:SourceConfig,html:string,now:string,read
   return result(jobs,malformed===0 && seen.size===total,'Magnit public board',total);
 }
 
-export function parseRandstad(source:SourceConfig,rows:Row[],now:string):Job[] {
-  return rows.filter(r=>eligibleRandstad(source,r)).map(r=> {
-    const rate=r.rateRange || {};
-    return makeJob(source,{sourceJobId:String(r.id || r.jobId || ''),title:r.title,
-      applyUrl:r.jobPublicUrl,description:r.description,
-      location:[r.siteCity,r.siteStateCode,r.siteCountry].filter(Boolean).join(', '),country:r.siteCountry,
-      workMode:workMode(r.workModelType),postedAt:r.publishDate || null,
-      duration:r.assignmentDurationVisible?r.assignmentPrettyDuration:null,
-      payMin:money(rate.minValue),payMax:money(rate.maxValue),currency:rate.currency,payPeriod:rate.period?.toLowerCase(),
-    },now);
-  }).filter((j):j is Job=>!!j);
-}
-function eligibleRandstad(source:SourceConfig,r:Row):boolean {
-  if(r.status!=='ACTIVE'||r.archived||r.filled)return false;
-  const types=Array.isArray(r.workerPayTypes)?r.workerPayTypes.join(' '):'';
-  if(/contingent|contract|temp/i.test(types))return true;
-  if(/perm|full.time roles/i.test(types))return /fixed.term|\bFTC\b|\bcontract\b|\btemporary\b/i.test(r.title || '');
-  return source.contractOnly;
-}
-export async function randstadFeed(source:SourceConfig,html:string,now:string,read:Reader,robots:Robots):Promise<Collection> {
-  if(source.id==='tescobank')return {jobs:[],complete:false,status:'needs_adapter',message:'The Tesco landing page links to the shared Barclays board without a Tesco company filter. A separately attributable public Tesco feed is required.'};
-  // This unauthenticated search endpoint is published by the public projects UI.
-  // Never call the separate candidate/private search API or submit an application.
-  if(!/\/projects|\/freelancerdist\//.test(html))return {jobs:[],complete:false,status:'needs_adapter',message:'No public Randstad projects board was linked by the registered portal.'};
-  const u=new URL('/v1/api/publicsearch/project/query',source.url);
-  await robots({...source,url:u.href});
-  let jobs:Job[]=[],offset=0,total:number|undefined,seen=new Set<string>(),invalid=false;
-  try {
-    for(let page=0;page<100;page++) {
-      const query=source.id==='aviva'?'status = ACTIVE AND ( worker_pay_types = "Contingent opportunity" )':'status = ACTIVE';
-      const data=JSON.parse(await read(u.href,{}, {filters:[],query,size:100,offset,sort:[{name:'public_sort_order',dir:'asc'},{name:'created',dir:'desc'}]}));
-      if(!Array.isArray(data.results)||!Number.isInteger(data.totalResults)||data.totalResults<0)throw new Error('Unexpected Randstad public search response.');
-      if(total!==undefined && data.totalResults!==total)return result(jobs,false,'Randstad public API',data.totalResults,seen.size);
-      total=data.totalResults;
-      const rows:Row[]=data.results;
-      if(rows.some(r=>!r.id || seen.has(String(r.id))))return result(jobs,false,'Randstad public API',total,seen.size);
-      rows.forEach(r=>seen.add(String(r.id)));offset+=rows.length;
-      const parsed=parseRandstad(source,rows,now);
-      invalid ||= parsed.length!==rows.filter(r=>eligibleRandstad(source,r)).length;
-      jobs.push(...parsed);
-      if(offset>=data.totalResults)return result(jobs,!invalid && seen.size===data.totalResults,'Randstad public API',total,seen.size);
-      if(!rows.length)break;
-    }
-  } catch(error) {if(!jobs.length)throw error;}
-  return result(jobs,false,'Randstad public API',total,seen.size);
-}
-
 export function parseOpptly(source:SourceConfig,rows:Row[],portal:string,now:string):Job[] {
   return rows.filter(r=>r.status?.statusName==='Open').map(r=> {
     const locations=r.publish_locations_list || r.publish_locations || [],loc=locations[0] || {};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { magnitFeed, randstadFeed, opptlyFeed, parseMagnitPage, parseRandstad } from '../server/public-feeds';
+import { magnitFeed, opptlyFeed, parseMagnitPage } from '../server/public-feeds';
 import type { SourceConfig } from '../server/sources';
 const now='2026-10-08T21:00:00.000Z';
 const base:SourceConfig={id:'test',company:'Test',provider:'Magnit',country:'US',url:'https://example.willhire.co/jobs',contractOnly:true};
@@ -17,20 +17,6 @@ describe('complete public provider feeds',()=> {
     expect((await magnitFeed(base,board(0,[]),now,async()=>{throw Error('unexpected request');})).complete).toBe(true);
     expect((await magnitFeed(base,board(101,[1]),now,async()=>board(101,[1]))).complete).toBe(false);
     expect(parseMagnitPage(base,'<div>No jobs</div>',now).advertisedCount).toBeUndefined();
-  });
-  it('Randstad follows offsets even when the provider caps page size and excludes closed records',async()=> {
-    const source={...base,provider:'Randstad' as const,url:'https://example.talent-community.com/'};
-    const offsets:number[]=[];
-    const row=(id:number)=>({id,title:'Contract analyst',status:'ACTIVE',jobPublicUrl:`https://example.talent-community.com/projects/analyst/${id}`,publishDate:'2026-10-07T12:00:00Z'});
-    const r=await randstadFeed(source,'<a href="/projects">Jobs</a>',now,async(url,headers,body:any)=>{expect(url).toContain('/publicsearch/');expect(body.query).toBe('status = ACTIVE');offsets.push(body.offset);return JSON.stringify({totalResults:3,results:body.offset===0?[row(1),row(2)]:[row(3)]});},async()=>{});
-    expect(offsets).toEqual([0,2]);expect(r.complete).toBe(true);expect(r.jobs).toHaveLength(3);
-    expect(parseRandstad(source,[{...row(4),status:'CLOSED'}],now)).toEqual([]);
-  });
-  it('Randstad refuses repeated pages and cannot mark incomplete totals complete',async()=> {
-    const source={...base,provider:'Randstad' as const,url:'https://example.talent-community.com/'};
-    const row={id:1,title:'Analyst',status:'ACTIVE',jobPublicUrl:'https://example.talent-community.com/projects/analyst/1'};
-    const r=await randstadFeed(source,'<a href="/projects">Jobs</a>',now,async()=>JSON.stringify({totalResults:3,results:[row]}),async()=>{});
-    expect(r.complete).toBe(false);expect(r.jobs).toHaveLength(1);
   });
   it('Opptly exhausts the linked public portal and does not copy another tenant or closed roles',async()=> {
     const source={...base,provider:'Raise' as const,url:'https://example.raise.jobs/'};
