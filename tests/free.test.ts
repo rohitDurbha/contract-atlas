@@ -35,7 +35,9 @@ describe('free standalone snapshot',()=>{
       }finally{reader.close();}
       expect(createHash('sha256').update(await readFile(path)).digest('hex')).toBe(createHash('sha256').update(before).digest('hex'));
     }finally{await rm(dir,{recursive:true,force:true});}
-  });
+  // This test copies and queries the full real snapshot, which takes longer
+  // than the default five seconds on shared CI runners.
+  },30_000);
   it('records source failures without removing previous roles or resetting last-success history',async()=>{
     const {db,close}=openSQLite(':memory:');
     try {
