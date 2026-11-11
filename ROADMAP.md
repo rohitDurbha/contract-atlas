@@ -15,6 +15,8 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
   - [x] d. Add a `match_resume` tool that takes resume text, ranks current roles by similarity (TF-IDF or small embeddings), explains the overlap and missing skills, and never stores the resume.
   - [x] e. Document the server in the README with connection steps for Claude and other clients, add a `server.json`, and prepare publishing to the official MCP Registry.
 - [ ] 2. Delete the unused Randstad and LiveHire adapter code and their tests.
+  - [ ] a. Remove the Randstad feed (`randstadFeed`, `parseRandstad` and the provider branch in the collector) together with its tests, since every Randstad board is retired.
+  - [ ] b. Drop `Randstad` and `LiveHire` from the provider type, remove the retired Randstad and LiveHire entries from `server/seed.json`, and point the test fixtures that still use those provider names at a live provider.
 - [ ] 3. Remove the legacy Cloudflare D1 path (root `wrangler.jsonc`, migrations, `build-worker`, `refresh-live`, `verify-live`, the scheduled export and the POST refresh routes) while keeping the Vercel and GitHub Actions path working.
 - [ ] 4. Precompute the duplicate flag at collection time and add an index so feed requests do not run a window query on every call.
 - [ ] 5. Mark sources with zero open roles clearly in the source directory and stop counting them as loaded.
