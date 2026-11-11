@@ -2,7 +2,7 @@ import { insightFeed, inspyrFeed, tundraFeed } from './staffing-feeds.js';
 import { load } from 'cheerio/slim';
 import type { Job, Source } from '../src/types.js';
 import type { SourceConfig } from './sources.js';
-import { magnitFeed, randstadFeed, opptlyFeed } from './public-feeds.js';
+import { magnitFeed, opptlyFeed } from './public-feeds.js';
 import { date, makeJob, money, plainText, safeUrl, workMode } from './normalize.js';
 
 type RecordData = Record<string, any>;
@@ -244,7 +244,6 @@ export async function collectSource(source: SourceConfig, now = new Date().toISO
     if (source.id==='inspyr') return await inspyrFeed(source,html,now,fetchPublic);
     if (source.provider==='KellyOCG') return await hireHQ(source,html,now);
     if (source.provider==='Magnit') return await magnitFeed(source,html,now,fetchPublic);
-    if (source.provider==='Randstad') return await randstadFeed(source,html,now,fetchPublic,checkRobots);
     if (source.provider==='Raise') return await opptlyFeed(source,html,now,fetchPublic,checkRobots);
     return await generic(source,html,now);
   } catch (error) {
