@@ -18,9 +18,9 @@ export interface Collection {
 export class FetchError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
-export async function fetchPublic(url: string, headers: Record<string,string> = {}, body?: unknown): Promise<string> {
+export async function fetchPublic(url: string, headers: Record<string,string> = {}): Promise<string> {
   for (let attempt=0; attempt<2; attempt++) {
-    const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', body: body === undefined ? undefined : JSON.stringify(body), headers: { 'User-Agent': 'ContractAtlas/1.0 (public contract job aggregator)', 'Accept': 'application/json,text/html;q=0.9', ...(body === undefined ? {} : {'Content-Type':'application/json'}), ...headers }, signal: AbortSignal.timeout(9000), redirect: 'follow' });
+    const response = await fetch(url, { headers: { 'User-Agent': 'ContractAtlas/1.0 (public contract job aggregator)', 'Accept': 'application/json,text/html;q=0.9', ...headers }, signal: AbortSignal.timeout(9000), redirect: 'follow' });
     if (response.ok) {
       const body = await response.text();
       if (body.length > 8_000_000) throw new Error('Response exceeded the collection size limit.');

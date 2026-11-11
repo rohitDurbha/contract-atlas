@@ -5,7 +5,7 @@ import type { Collection } from './adapters.js';
 import { date, makeJob, money, safeUrl, workMode } from './normalize.js';
 
 type Row = Record<string, any>;
-type Reader = (url:string, headers?:Record<string,string>, body?:unknown)=>Promise<string>;
+type Reader = (url:string, headers?:Record<string,string>)=>Promise<string>;
 type Robots = (source:SourceConfig)=>Promise<void>;
 const unique = (jobs:Job[])=>[...new Map(jobs.map(j=>[j.id,j])).values()];
 function result(jobs:Job[],complete:boolean,label:string,advertisedCount?:number,retrievedCount?:number):Collection {
