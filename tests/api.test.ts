@@ -71,7 +71,7 @@ describe('database-backed API',()=> {
   });
   it('hides archived restricted sources and roles without deleting history',async()=> {
     const db=sqliteD1();await ensureDB(db);
-    await db.prepare("INSERT OR IGNORE INTO sources(id,company,provider,url,country,status) VALUES('adm','ADM','LiveHire','https://example.com','US','blocked')").run();
+    await db.prepare("INSERT OR IGNORE INTO sources(id,company,provider,url,country,status) VALUES('adm','ADM','TalentNet','https://example.com','US','blocked')").run();
     const job=makeJob({...SOURCES[0],id:'adm',company:'ADM'},{sourceJobId:'archived',title:'Archived Analyst',applyUrl:'https://example.com/jobs/1'},'2026-09-01T00:00:00Z')!;
     await jobStatement(db,job).run();
     expect((await (await request(db,'/api/jobs?company=ADM')).json() as any).total).toBe(0);
