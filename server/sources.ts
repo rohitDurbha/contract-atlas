@@ -1,4 +1,4 @@
-export type Provider = 'TalentNet' | 'Magnit' | 'KellyOCG' | 'Randstad' | 'LiveHire' | 'Raise' | 'Staffing Future' | 'Matador' | 'Insight Global';
+export type Provider = 'TalentNet' | 'Magnit' | 'KellyOCG' | 'Raise' | 'Staffing Future' | 'Matador' | 'Insight Global';
 export interface SourceConfig {
   id: string;
   company: string;
