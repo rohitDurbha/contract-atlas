@@ -22,6 +22,9 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
   - [ ] b. Remove the scheduled export, the POST refresh, refresh step and schedule settings routes and the static asset fallback from `server/index.ts`, drop `startRun` and `stepRun` if nothing else needs them, and update the API tests.
   - [ ] c. Replace the `D1Database` type with a small database interface over `node:sqlite`, so `@cloudflare/workers-types` and the Drizzle D1 driver are no longer needed.
 - [ ] 4. Precompute the duplicate flag at collection time and add an index so feed requests do not run a window query on every call.
+  - [ ] a. Add a `duplicate` column to `jobs` (with a migration for snapshots that predate it) and a `markDuplicates` function that sets the flag in one statement for every reposted opening the feed currently hides. Add tests that compare it with the live window query.
+  - [ ] b. Run `markDuplicates` at the end of every refresh and when the snapshot is built, then switch `feedScopeSql` to read the flag instead of the window query.
+  - [ ] c. Add an index that covers the flag and the freshness columns, and make `verify:free` fail when the stored flags disagree with a fresh window query.
 - [ ] 5. Mark sources with zero open roles clearly in the source directory and stop counting them as loaded.
 - [ ] 6. LLM enrichment at collection time with a free Groq or Gemini key stored as a GitHub secret. Extract skills, seniority, normalized title, remote status and hourly pay into the snapshot so the site has no runtime AI cost.
 - [ ] 7. Semantic search using small local embeddings (bge-small or MiniLM through fastembed) stored in SQLite with sqlite-vec, so people can describe the role they want in plain words.
