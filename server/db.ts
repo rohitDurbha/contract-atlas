@@ -8,7 +8,7 @@ import { feedCutoff, PERMANENT_TYPES } from './policy.js';
 
 const DDL = [
   'CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY,company TEXT NOT NULL,provider TEXT NOT NULL,url TEXT NOT NULL,country TEXT NOT NULL,status TEXT NOT NULL DEFAULT \'pending\',last_checked_at TEXT,last_success_at TEXT,message TEXT)',
-  'CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY,source_id TEXT NOT NULL,company TEXT NOT NULL,title TEXT NOT NULL,location TEXT NOT NULL,country TEXT NOT NULL,work_mode TEXT NOT NULL,category TEXT NOT NULL,pay_min REAL,pay_max REAL,posted_at TEXT,first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,apply_url TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,data TEXT NOT NULL,UNIQUE(source_id,apply_url))',
+  'CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY,source_id TEXT NOT NULL,company TEXT NOT NULL,title TEXT NOT NULL,location TEXT NOT NULL,country TEXT NOT NULL,work_mode TEXT NOT NULL,category TEXT NOT NULL,pay_min REAL,pay_max REAL,posted_at TEXT,first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,apply_url TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,data TEXT NOT NULL,duplicate INTEGER NOT NULL DEFAULT 0,UNIQUE(source_id,apply_url))',
   'CREATE INDEX IF NOT EXISTS jobs_freshness ON jobs(active,posted_at DESC,first_seen_at DESC)',
   'CREATE INDEX IF NOT EXISTS jobs_filters ON jobs(company,category,work_mode)',
   'CREATE INDEX IF NOT EXISTS jobs_sources ON jobs(source_id,active,last_seen_at)',
@@ -17,6 +17,17 @@ const DDL = [
   'CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS source_coverage (source_id TEXT PRIMARY KEY,complete INTEGER NOT NULL DEFAULT 0,advertised_count INTEGER,fetched_count INTEGER NOT NULL DEFAULT 0,checked_at TEXT NOT NULL)',
 ];
+// Snapshots built before a column existed are upgraded in place, since
+// CREATE TABLE IF NOT EXISTS leaves an existing table untouched.
+const ADDED_COLUMNS:[table:string,column:string,definition:string][]=[
+  ['jobs','duplicate','INTEGER NOT NULL DEFAULT 0'],
+];
+async function addMissingColumns(db: D1Database): Promise<void> {
+  for (const [table,column,definition] of ADDED_COLUMNS) {
+    const found=await db.prepare(`SELECT 1 AS present FROM pragma_table_info('${table}') WHERE name=?`).bind(column).first();
+    if (!found) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
+}
 const ready = new WeakMap<D1Database, Promise<void>>();
 export async function ensureDB(db: D1Database): Promise<void> {
   if (!db) throw new Error('The database binding is unavailable.');
@@ -25,6 +36,7 @@ export async function ensureDB(db: D1Database): Promise<void> {
   if (!pending) {
     pending=(async()=> {
       await db.batch(DDL.map(s=>db.prepare(s)));
+      await addMissingColumns(db);
       await db.batch(SOURCES.map(s=>db.prepare('INSERT INTO sources(id,company,provider,url,country) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET company=excluded.company,provider=excluded.provider,url=excluded.url,country=excluded.country').bind(s.id,s.company,s.provider,s.url,s.country)));
       const seeded=await db.prepare("SELECT value FROM settings WHERE key='seeded'").first();
       if (!seeded && seed.jobs.length) {
