@@ -179,6 +179,14 @@ describe('MCP server on a controlled database', () => {
     expect(sources.find((s: any) => s.id === SOURCES[0].id).jobCount).toBe(2);
     expect(sources.find((s: any) => s.id === SOURCES[1].id).jobCount).toBe(1);
   });
+
+  it('flags readable sources without roles as empty and counts them', async () => {
+    const { emptyCount, sources } = (await callTool(handler.fetch, 'list_sources')).structuredContent;
+    const empty = sources.filter((s: any) => s.empty);
+    expect(emptyCount).toBe(empty.length);
+    expect(empty.every((s: any) => s.status === 'healthy' && s.jobCount === 0)).toBe(true);
+    expect(sources.find((s: any) => s.id === SOURCES[0].id).empty).toBe(false);
+  });
 });
 
 describe('MCP endpoint on the public Vercel function', () => {

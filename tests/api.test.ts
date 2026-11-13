@@ -20,6 +20,10 @@ function sqliteD1(): D1Database {
   };
   return {prepare,async batch(statements:any[]){return Promise.all(statements.map(s=>s.all()));},async exec(query:string){db.exec(query);return {count:0,duration:0};}} as unknown as D1Database;
 }
+async function addRole(db:D1Database,sourceId:string,postedAt=new Date(Date.now()-86400000).toISOString()){
+  const source=SOURCES.find(s=>s.id===sourceId)!,now=new Date().toISOString();
+  await jobStatement(db,makeJob(source,{sourceJobId:'open-'+sourceId,title:'Software Engineer',applyUrl:'https://example.com/jobs/'+sourceId,postedAt,description:'Builds software.'},now)!).run();
+}
 const ctx={waitUntil(){},passThroughOnException(){},props:{}} as unknown as ExecutionContext;
 async function request(db:D1Database,path:string,options?:RequestInit){return worker.fetch(new Request('https://atlas.test'+path,options),{DB:db,ASSETS:{fetch:async()=>new Response('static')} as any},ctx);}
 describe('database-backed API',()=> {
@@ -93,11 +97,33 @@ describe('database-backed API',()=> {
     await db.prepare("UPDATE sources SET status='healthy' WHERE id IN ('meta','pinterest')").run();
     await db.prepare("INSERT INTO source_coverage(source_id,complete,advertised_count,fetched_count,checked_at) VALUES('meta',1,298,298,?) ON CONFLICT(source_id) DO UPDATE SET complete=1,advertised_count=298,fetched_count=298").bind('2026-09-30T22:00:00.000Z').run();
     await db.prepare("INSERT INTO source_coverage(source_id,complete,fetched_count,checked_at) VALUES('pinterest',0,1,?) ON CONFLICT(source_id) DO UPDATE SET complete=0").bind('2026-09-30T22:00:00.000Z').run();
+    await addRole(db,'meta');await addRole(db,'pinterest');
     const rows=await (await request(db,'/api/sources')).json() as any[];
     expect(rows.find(s=>s.id==='meta')).toMatchObject({coverage:'complete',advertisedCount:298,fetchedCount:298});
     expect(rows.find(s=>s.id==='pinterest').coverage).toBe('partial');
     expect(rows.find(s=>s.id==='boeing').coverage).toBe('unavailable');
     const overview=await (await request(db,'/api/overview')).json() as any;
-    expect(overview).toMatchObject({healthySources:2,completeSources:1,partialSources:1});
+    expect(overview).toMatchObject({healthySources:2,completeSources:1,partialSources:1,emptySources:0});
+  });
+  it('marks readable sources with no open roles as empty and leaves them out of the loaded counts',async()=>{
+    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    await db.prepare("UPDATE sources SET status='error'").run();
+    await db.prepare("UPDATE sources SET status='healthy' WHERE id IN ('meta','pinterest','boeing')").run();
+    await db.prepare("INSERT INTO source_coverage(source_id,complete,advertised_count,fetched_count,checked_at) VALUES('meta',1,1,1,?),('pinterest',1,0,0,?),('boeing',0,0,0,?) ON CONFLICT(source_id) DO UPDATE SET complete=excluded.complete").bind('2026-09-30T22:00:00.000Z','2026-09-30T22:00:00.000Z','2026-09-30T22:00:00.000Z').run();
+    await addRole(db,'meta');
+    const rows=await (await request(db,'/api/sources')).json() as any[];
+    expect(rows.find(s=>s.id==='meta')).toMatchObject({empty:false,jobCount:1,coverage:'complete'});
+    expect(rows.find(s=>s.id==='pinterest')).toMatchObject({empty:true,jobCount:0,coverage:'complete'});
+    expect(rows.find(s=>s.id==='boeing')).toMatchObject({empty:true,jobCount:0,coverage:'partial'});
+    expect(rows.filter(s=>s.status!=='healthy').every(s=>s.empty===false)).toBe(true);
+    const overview=await (await request(db,'/api/overview')).json() as any;
+    expect(overview).toMatchObject({sourceCount:43,healthySources:1,completeSources:1,partialSources:0,emptySources:2});
+  });
+  it('treats a source whose only roles fall outside the feed window as empty',async()=>{
+    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    await db.prepare("UPDATE sources SET status='healthy' WHERE id='meta'").run();
+    await addRole(db,'meta',new Date(Date.now()-120*86400000).toISOString());
+    const meta=(await (await request(db,'/api/sources')).json() as any[]).find(s=>s.id==='meta');
+    expect(meta).toMatchObject({empty:true,jobCount:0});
   });
 });
