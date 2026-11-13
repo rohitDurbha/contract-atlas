@@ -26,6 +26,9 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
   - [ ] b. Run `markDuplicates` at the end of every refresh and when the snapshot is built, then switch `feedScopeSql` to read the flag instead of the window query.
   - [ ] c. Add an index that covers the flag and the freshness columns, and make `verify:free` fail when the stored flags disagree with a fresh window query.
 - [ ] 5. Mark sources with zero open roles clearly in the source directory and stop counting them as loaded.
+  - [ ] a. Flag readable sources that currently have no roles in the feed with an `empty` field on each source, and stop counting them as readable, complete or partial in the overview. Report them separately as `emptySources` so the API, the site and the MCP `list_sources` tool agree. Add tests.
+  - [ ] b. Show a clear "No open roles" badge and a summary tile for those sources in the source directory, and update the home page metric and coverage notice wording to use the new counts.
+  - [ ] c. Add a directory filter that hides or shows sources with no open roles, and note the behaviour in the README.
 - [ ] 6. LLM enrichment at collection time with a free Groq or Gemini key stored as a GitHub secret. Extract skills, seniority, normalized title, remote status and hourly pay into the snapshot so the site has no runtime AI cost.
 - [ ] 7. Semantic search using small local embeddings (bge-small or MiniLM through fastembed) stored in SQLite with sqlite-vec, so people can describe the role they want in plain words.
 - [ ] 8. Resume match that runs fully in the browser with transformers.js. The visitor drops a resume, it never leaves the device, and roles are ranked by similarity.
