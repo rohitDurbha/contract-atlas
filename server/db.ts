@@ -74,12 +74,24 @@ function baseScopeSql(prefix:string,now:Date):string {
   // Datacenter facilities and data-entry clerical work are outside this technical feed.
   return `${prefix}active=1 AND julianday(${prefix}posted_at)>=julianday('${feedCutoff(now).toISOString()}') AND julianday(${prefix}posted_at)<=julianday('${now.toISOString()}') AND (${related}) AND ${title} NOT LIKE '% data center %' AND ${title} NOT LIKE '% datacenter %' AND ${title} NOT LIKE '% data entry %' AND lower(trim(coalesce(json_extract(${prefix}data,'$.employmentType'),''))) NOT IN (${permanent})`;
 }
+// Reposted openings share a company, title and location. The newest posting
+// in scope keeps the listing and every other in-scope copy is flagged.
+function repostRankSql(now:Date):string {
+  return `SELECT id,row_number() OVER (PARTITION BY company,lower(trim(title)),lower(trim(location)) ORDER BY posted_at DESC,id DESC) AS rank FROM jobs WHERE ${baseScopeSql('',now)}`;
+}
+// Stores the duplicate flag so feed requests can skip the window query.
+// Returns how many rows are flagged after the update.
+export async function markDuplicates(db: D1Database, now=new Date()): Promise<number> {
+  await db.prepare(`UPDATE jobs SET duplicate=CASE WHEN id IN (SELECT id FROM (${repostRankSql(now)}) WHERE rank>1) THEN 1 ELSE 0 END`).run();
+  const row=await db.prepare('SELECT count(*) AS n FROM jobs WHERE duplicate=1').first<{n:number}>();
+  return Number(row?.n ?? 0);
+}
 export function feedScopeSql(alias='' , now=new Date()):string {
   if(alias && !/^[a-z_]+$/.test(alias))throw new Error('Invalid SQL alias');
   const prefix=alias?alias+'.':'';
   // Sources often repost one opening under several requisition IDs. Only the
   // newest posting per company, title and location is listed.
-  const newest=`SELECT id FROM (SELECT id,row_number() OVER (PARTITION BY company,lower(trim(title)),lower(trim(location)) ORDER BY posted_at DESC,id DESC) AS rank FROM jobs WHERE ${baseScopeSql('',now)}) WHERE rank=1`;
+  const newest=`SELECT id FROM (${repostRankSql(now)}) WHERE rank=1`;
   return `(${baseScopeSql(prefix,now)} AND ${prefix}id IN (${newest}))`;
 }
 export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed> {
