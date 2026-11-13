@@ -18,6 +18,9 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
   - [x] a. Remove the Randstad feed (`randstadFeed`, `parseRandstad` and the provider branch in the collector) together with its tests, since every Randstad board is retired.
   - [x] b. Drop `Randstad` and `LiveHire` from the provider type, remove the retired Randstad and LiveHire entries from `server/seed.json`, and point the test fixtures that still use those provider names at a live provider.
 - [ ] 3. Remove the legacy Cloudflare D1 path (root `wrangler.jsonc`, migrations, `build-worker`, `refresh-live`, `verify-live`, the scheduled export and the POST refresh routes) while keeping the Vercel and GitHub Actions path working.
+  - [ ] a. Delete the Cloudflare deployment files, which are the root `wrangler.jsonc`, `migrations/`, `scripts/build-worker.mjs`, `scripts/refresh-live.mjs`, `scripts/verify-live.mjs` and the `db:local` and `preview` npm scripts. Keep `wrangler` as a dev dependency because the dispatcher deploy still uses it.
+  - [ ] b. Remove the scheduled export, the POST refresh, refresh step and schedule settings routes and the static asset fallback from `server/index.ts`, drop `startRun` and `stepRun` if nothing else needs them, and update the API tests.
+  - [ ] c. Replace the `D1Database` type with a small database interface over `node:sqlite`, so `@cloudflare/workers-types` and the Drizzle D1 driver are no longer needed.
 - [ ] 4. Precompute the duplicate flag at collection time and add an index so feed requests do not run a window query on every call.
 - [ ] 5. Mark sources with zero open roles clearly in the source directory and stop counting them as loaded.
 - [ ] 6. LLM enrichment at collection time with a free Groq or Gemini key stored as a GitHub secret. Extract skills, seniority, normalized title, remote status and hourly pay into the snapshot so the site has no runtime AI cost.
