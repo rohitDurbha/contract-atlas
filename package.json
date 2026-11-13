@@ -10,8 +10,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "collect": "node --import tsx scripts/collect.ts",
-    "db:local": "wrangler d1 migrations apply DB --local",
-    "preview": "wrangler dev --port 8787",
     "build:free": "node --import tsx scripts/init-free.ts && vite build",
     "collect:free": "node --import tsx scripts/refresh-free.ts",
     "verify:free": "node --import tsx scripts/verify-free.ts"
