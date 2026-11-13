@@ -3,7 +3,7 @@ const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
-import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources } from './db.js';
+import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources, sourceHealth } from './db.js';
 import { formatRun, startRun, stepRun, runScheduled } from './ingestion.js';
 import type { Overview } from '../src/types.js';
 
@@ -32,12 +32,12 @@ app.get('/api/overview',async c=> {
   const db=c.env.DB,today=new Date(Date.now()-24*3_600_000).toISOString();
   const [stats,sourceStats,last,schedule]=await Promise.all([
     db.prepare(`SELECT count(*) AS total, sum(CASE WHEN posted_at>=? THEN 1 ELSE 0 END) AS today, sum(CASE WHEN work_mode=\'Remote\' THEN 1 ELSE 0 END) AS remote, count(DISTINCT company) AS companies FROM jobs WHERE ${feedScopeSql()} AND source_id NOT IN (${retiredSql})`).bind(today,...RETIRED_SOURCE_IDS).first<any>(),
-    db.prepare(`SELECT count(*) AS total,sum(CASE WHEN s.status=\'healthy\' THEN 1 ELSE 0 END) AS healthy,sum(CASE WHEN s.status=\'healthy\' AND c.complete=1 THEN 1 ELSE 0 END) AS complete FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id WHERE s.id NOT IN (${retiredSql})`).bind(...RETIRED_SOURCE_IDS).first<any>(),
+    listSources(db).then(sourceHealth),
     db.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT 1').first<any>(),
     db.prepare("SELECT value FROM settings WHERE key='schedule_enabled'").first<{value:string}>(),
   ]);
   const enabled=schedule?.value==='true';
-  const overview:Overview={totalJobs:stats?.total||0,newToday:stats?.today||0,remoteJobs:stats?.remote||0,companyCount:stats?.companies||0,sourceCount:sourceStats?.total||0,healthySources:sourceStats?.healthy||0,completeSources:sourceStats?.complete||0,partialSources:(sourceStats?.healthy||0)-(sourceStats?.complete||0),lastRun:last?formatRun(last):null,nextRefreshAt:enabled&&last?new Date(Math.max(Date.parse(last.started_at)+7_200_000,Date.now())).toISOString():null,scheduleEnabled:enabled};
+  const overview:Overview={totalJobs:stats?.total||0,newToday:stats?.today||0,remoteJobs:stats?.remote||0,companyCount:stats?.companies||0,sourceCount:sourceStats.total,healthySources:sourceStats.healthy,completeSources:sourceStats.complete,partialSources:sourceStats.partial,emptySources:sourceStats.empty,lastRun:last?formatRun(last):null,nextRefreshAt:enabled&&last?new Date(Math.max(Date.parse(last.started_at)+7_200_000,Date.now())).toISOString():null,scheduleEnabled:enabled};
   return c.json(overview);
 });
 app.get('/api/runs',async c=> {const rows=await c.env.DB.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT 20').all<any>();return c.json(rows.results.map(formatRun));});

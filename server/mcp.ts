@@ -114,12 +114,12 @@ export function buildMcpServer(db: D1Database, options: AtlasMcpOptions = {}): M
 
   server.registerTool('list_sources', {
     title: 'List job sources',
-    description: 'List every job board Contract Atlas collects from, with its health, coverage, last successful check and number of current roles.',
+    description: 'List every job board Contract Atlas collects from, with its health, coverage, last successful check and number of current roles. Sources marked empty were read successfully but have no roles in the feed right now.',
     inputSchema: z.object({}),
     annotations: READ_ONLY,
   }, async () => {
     const sources = await listSources(db);
-    return result({ count: sources.length, sources });
+    return result({ count: sources.length, emptyCount: sources.filter(s => s.empty).length, sources });
   });
 
   server.registerTool('market_trends', {

@@ -35,6 +35,8 @@ export interface Source {
   jobCount: number;
   message: string | null;
   coverage: 'complete' | 'partial' | 'unavailable';
+  /** Readable source with no roles in the current feed. */
+  empty: boolean;
   advertisedCount: number | null;
   fetchedCount: number | null;
 }
@@ -57,6 +59,8 @@ export interface Overview {
   healthySources: number;
   completeSources: number;
   partialSources: number;
+  /** Readable sources that currently have no roles in the feed. Not counted as healthy, complete or partial. */
+  emptySources: number;
   lastRun: Run | null;
   nextRefreshAt: string | null;
   scheduleEnabled: boolean;

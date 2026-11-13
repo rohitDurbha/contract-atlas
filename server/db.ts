@@ -135,5 +135,12 @@ export async function getFeedJob(db: D1Database, id: string): Promise<Job | null
 // The source directory with live role counts, as shown on the site.
 export async function listSources(db: D1Database): Promise<Source[]> {
   const result=await db.prepare(`SELECT s.*, c.complete,c.advertised_count,c.fetched_count, (SELECT count(*) FROM jobs j WHERE j.source_id=s.id AND ${feedScopeSql('j')}) AS job_count FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id WHERE s.id NOT IN (${retiredSql}) ORDER BY s.company`).bind(...RETIRED_SOURCE_IDS).all<any>();
-  return result.results.map(r=>({id:r.id,company:r.company,provider:r.provider,url:r.url,country:r.country,status:r.status,lastCheckedAt:r.last_checked_at,lastSuccessAt:r.last_success_at,jobCount:r.job_count,message:r.message,coverage:r.status==='healthy'?(r.complete===1?'complete':'partial'):'unavailable',advertisedCount:r.advertised_count??null,fetchedCount:r.fetched_count??null}));
+  return result.results.map(r=>({id:r.id,company:r.company,provider:r.provider,url:r.url,country:r.country,status:r.status,lastCheckedAt:r.last_checked_at,lastSuccessAt:r.last_success_at,jobCount:r.job_count,message:r.message,coverage:r.status==='healthy'?(r.complete===1?'complete':'partial'):'unavailable',empty:r.status==='healthy'&&Number(r.job_count)===0,advertisedCount:r.advertised_count??null,fetchedCount:r.fetched_count??null}));
+}
+export interface SourceHealth { total:number; healthy:number; complete:number; partial:number; empty:number }
+// Source counts for the overview. A readable source only counts as loaded when it has roles in the feed.
+export function sourceHealth(sources: Source[]): SourceHealth {
+  const loaded=sources.filter(s=>s.status==='healthy'&&!s.empty);
+  const complete=loaded.filter(s=>s.coverage==='complete').length;
+  return {total:sources.length,healthy:loaded.length,complete,partial:loaded.length-complete,empty:sources.filter(s=>s.empty).length};
 }
