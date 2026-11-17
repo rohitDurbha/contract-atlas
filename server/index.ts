@@ -4,23 +4,21 @@ import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
 import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources, sourceHealth } from './db.js';
-import { formatRun, startRun, stepRun, runScheduled } from './ingestion.js';
+import { formatRun } from './ingestion.js';
 import type { Overview } from '../src/types.js';
 
-type Bindings={DB:D1Database;ASSETS:Fetcher};
+// The site and the MCP endpoint are served from a read-only snapshot. Collection
+// runs in GitHub Actions, so this app exposes no write routes.
+type Bindings={DB:D1Database};
 const app=new Hono<{Bindings:Bindings}>();
 app.use('*',secureHeaders({referrerPolicy:'strict-origin-when-cross-origin',xFrameOptions:false}));
 app.use('/api/*',bodyLimit({maxSize:16_384}));
 app.use('/api/*',async(c,next)=> {
   c.header('Cache-Control','no-store');
-  if(c.req.method!=='GET') {
-    const origin=c.req.header('Origin');
-    if(origin && origin!==new URL(c.req.url).origin) return c.json({error:'Cross-origin mutations are not allowed.'},403);
-  }
   await ensureDB(c.env.DB);
   await next();
 });
-app.get('/api/access',c=>c.json({canRefresh:true}));
+app.get('/api/access',c=>c.json({canRefresh:false}));
 app.get('/api/health',c=>c.json({ok:true,service:'contract-atlas',timestamp:new Date().toISOString()}));
 app.get('/api/jobs',async c=>c.json(await jobFeed(c.env.DB,new URL(c.req.url).searchParams)));
 app.get('/api/jobs/:id',async c=> {
@@ -41,27 +39,10 @@ app.get('/api/overview',async c=> {
   return c.json(overview);
 });
 app.get('/api/runs',async c=> {const rows=await c.env.DB.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT 20').all<any>();return c.json(rows.results.map(formatRun));});
-app.post('/api/refresh',async c=>c.json(await startRun(c.env.DB),202));
-app.post('/api/refresh/:id/step',async c=> {
-  if(!/^[a-f0-9-]{36}$/.test(c.req.param('id'))) return c.json({error:'Invalid refresh ID.'},400);
-  return c.json(await stepRun(c.env.DB,c.req.param('id')));
-});
-app.post('/api/settings/schedule',async c=> {
-  const body=await c.req.json<{enabled:boolean}>();
-  if(typeof body.enabled!=='boolean') return c.json({error:'enabled must be a boolean.'},400);
-  await c.env.DB.prepare("INSERT INTO settings(key,value) VALUES('schedule_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(body.enabled)).run();
-  return c.json({enabled:body.enabled});
-});
 app.all('/api/*',c=>c.json({error:'API endpoint not found.'},404));
-app.all('*',c=>c.env.ASSETS.fetch(c.req.raw));
+app.all('*',c=>c.json({error:'Not found.'},404));
 app.onError((error,c)=> {
   console.error(JSON.stringify({level:'error',message:error.message,path:c.req.path,timestamp:new Date().toISOString()}));
-  const message=error.message.includes('already in progress')?error.message:'The request could not complete. Try again shortly.';
-  return c.json({error:message},error.message.includes('already in progress')?409:503);
+  return c.json({error:'The request could not complete. Try again shortly.'},503);
 });
-export default {
-  fetch:app.fetch,
-  async scheduled(_event:ScheduledController,env:Bindings,ctx:ExecutionContext) {
-    ctx.waitUntil((async()=> {await ensureDB(env.DB);await runScheduled(env.DB);})());
-  },
-};
+export default {fetch:app.fetch};

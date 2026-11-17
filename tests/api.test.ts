@@ -25,7 +25,7 @@ async function addRole(db:D1Database,sourceId:string,postedAt=new Date(Date.now(
   await jobStatement(db,makeJob(source,{sourceJobId:'open-'+sourceId,title:'Software Engineer',applyUrl:'https://example.com/jobs/'+sourceId,postedAt,description:'Builds software.'},now)!).run();
 }
 const ctx={waitUntil(){},passThroughOnException(){},props:{}} as unknown as ExecutionContext;
-async function request(db:D1Database,path:string,options?:RequestInit){return worker.fetch(new Request('https://atlas.test'+path,options),{DB:db,ASSETS:{fetch:async()=>new Response('static')} as any},ctx);}
+async function request(db:D1Database,path:string,options?:RequestInit){return worker.fetch(new Request('https://atlas.test'+path,options),{DB:db},ctx);}
 describe('database-backed API',()=> {
   it('shares the 90-day technical-role policy across search, details, facets, and counts',async()=>{
     const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
@@ -87,8 +87,8 @@ describe('database-backed API',()=> {
   it('shares a refresh run across repeated triggers',async()=> {
     const db=sqliteD1();await ensureDB(db);const a=await startRun(db),b=await startRun(db);expect(a.id).toBe(b.id);
   });
-  it('blocks cross-origin writes and exposes original source health',async()=> {
-    const db=sqliteD1();const bad=await request(db,'/api/refresh',{method:'POST',headers:{Origin:'https://untrusted.example'}});expect(bad.status).toBe(403);
+  it('exposes original source health',async()=> {
+    const db=sqliteD1();
     const response=await request(db,'/api/sources');const sources=await response.json() as any[];expect(sources).toHaveLength(43);expect(sources.every(s=>typeof s.status==='string')).toBe(true);
   });
   it('distinguishes fully retrieved feeds from readable but partial feeds',async()=>{
