@@ -87,6 +87,20 @@ describe('database-backed API',()=> {
   it('shares a refresh run across repeated triggers',async()=> {
     const db=sqliteD1();await ensureDB(db);const a=await startRun(db),b=await startRun(db);expect(a.id).toBe(b.id);
   });
+  it('exposes no write routes and reports that refresh runs elsewhere',async()=> {
+    const db=sqliteD1();await ensureDB(db);
+    const runs=await db.prepare('SELECT count(*) AS n FROM runs').first<any>();
+    for(const path of ['/api/refresh','/api/refresh/00000000-0000-0000-0000-000000000000/step','/api/settings/schedule'])
+      expect((await request(db,path,{method:'POST',body:'{"enabled":true}'})).status).toBe(404);
+    expect(await db.prepare('SELECT count(*) AS n FROM runs').first<any>()).toEqual(runs);
+    expect(await db.prepare("SELECT value FROM settings WHERE key='schedule_enabled'").first()).toBeNull();
+    expect(await (await request(db,'/api/access')).json()).toEqual({canRefresh:false});
+    expect(worker).not.toHaveProperty('scheduled');
+  });
+  it('answers unknown non-API paths with a JSON 404 instead of a static asset fallback',async()=> {
+    const db=sqliteD1();const response=await request(db,'/index.html');
+    expect(response.status).toBe(404);expect(await response.json()).toEqual({error:'Not found.'});
+  });
   it('exposes original source health',async()=> {
     const db=sqliteD1();
     const response=await request(db,'/api/sources');const sources=await response.json() as any[];expect(sources).toHaveLength(43);expect(sources.every(s=>typeof s.status==='string')).toBe(true);
