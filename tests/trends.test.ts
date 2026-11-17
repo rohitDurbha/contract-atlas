@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { openSQLite } from '../server/sqlite';
-import { ensureDB, jobStatement } from '../server/db';
+import { ensureDB, jobStatement, markDuplicates } from '../server/db';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
 import { marketTrends, MAX_TREND_WEEKS } from '../server/trends';
@@ -30,6 +30,7 @@ describe('market trends', () => {
     await add(1, 'retail', 'Retail Associate', 1, { skills: ['Python'] });
     await add(1, 'typo', 'Platform Engineer', 2, { skills: ['Go'], ...usd(120000, 140000) });
     await add(1, 'old', 'Data Scientist', 87, { skills: ['R'] });
+    await markDuplicates(sqlite.db, now);
   });
   afterAll(() => sqlite.close());
 

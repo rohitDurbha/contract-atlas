@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { openSQLite } from '../server/sqlite';
-import { ensureDB, jobStatement } from '../server/db';
+import { ensureDB, jobStatement, markDuplicates } from '../server/db';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
 import { estimatePay, featureKeys, isPayModel, locationParts, MIN_TRAINING_ROLES, titleWords, trainCurrency, trainPayModel } from '../server/pay-model';
@@ -95,6 +95,7 @@ describe('pay model from the snapshot', () => {
     await add('salary', 'Senior Data Engineer', 'Austin, TX', { payMin: 150000, payMax: 170000, payPeriod: 'year', currency: 'USD' });
     await add('typo', 'Data Engineer', 'Austin, TX', { payMin: 120000, payMax: 130000, payPeriod: 'hour', currency: 'USD' });
     for (let i = 0; i < 5; i++) await add('cad-' + i, 'Data Engineer', 'Calgary, AB', { payMin: 70, payPeriod: 'hourly', currency: 'CAD' });
+    await markDuplicates(sqlite.db, now);
   });
   afterAll(() => sqlite.close());
 

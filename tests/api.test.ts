@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe,it,expect } from 'vitest';
 import worker from '../server/index';
-import { ensureDB,jobStatement } from '../server/db';
+import { ensureDB,jobStatement,markDuplicates } from '../server/db';
 import { startRun } from '../server/ingestion';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
@@ -54,6 +54,8 @@ describe('database-backed API',()=> {
     await add('d','Data Labeling Analyst II','Menlo Park, CA',day(3));
     await add('e','Data Scientist','Remote',day(1),'Perm');
     await add('f','Data Engineer','Remote',day(1),'Contract To Perm');
+    // The refresh flags reposts once, and the feed reads that flag.
+    await markDuplicates(db);
     const feed=await (await request(db,'/api/jobs')).json() as any;
     expect(feed.jobs.map((j:any)=>j.id).sort()).toEqual(['meta:b','meta:d','meta:f']);
     expect((await (await request(db,'/api/overview')).json() as any).totalJobs).toBe(3);

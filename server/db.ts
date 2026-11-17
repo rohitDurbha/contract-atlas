@@ -91,9 +91,10 @@ export function feedScopeSql(alias='' , now=new Date()):string {
   if(alias && !/^[a-z_]+$/.test(alias))throw new Error('Invalid SQL alias');
   const prefix=alias?alias+'.':'';
   // Sources often repost one opening under several requisition IDs. Only the
-  // newest posting per company, title and location is listed.
-  const newest=`SELECT id FROM (${repostRankSql(now)}) WHERE rank=1`;
-  return `(${baseScopeSql(prefix,now)} AND ${prefix}id IN (${newest}))`;
+  // newest posting per company, title and location is listed. markDuplicates
+  // stores that choice after every refresh and build, so requests read a
+  // column here instead of ranking the whole table.
+  return `(${baseScopeSql(prefix,now)} AND ${prefix}duplicate=0)`;
 }
 export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed> {
   const orm=drizzle(db),j=schema.jobs;
