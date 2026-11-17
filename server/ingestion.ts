@@ -1,6 +1,6 @@
 import { SOURCES } from './sources.js';
 import { collectSource, type Collection } from './adapters.js';
-import { hydrate, jobStatement } from './db.js';
+import { hydrate, jobStatement, markDuplicates } from './db.js';
 import type { Job, Run } from '../src/types.js';
 
 type RunRow = {id:string;status:Run['status'];started_at:string;completed_at:string|null;source_count:number;success_count:number;new_count:number;job_count:number;cursor:number};
@@ -98,7 +98,12 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
     const cursor=row.cursor+batch.length,done=cursor>=SOURCES.length;
     const status=done?(row.success_count+success===SOURCES.length?'completed':row.success_count+success>0?'partial':'failed'):'running';
     await db.prepare('UPDATE runs SET cursor=?,success_count=success_count+?,new_count=new_count+?,job_count=job_count+?,status=?,completed_at=? WHERE id=? AND cursor=?').bind(cursor,success,newCount,jobCount,status,done?now:null,id,row.cursor).run();
-    if(done) await db.prepare('DELETE FROM leases WHERE key=\'ingestion\' AND owner=?').bind(id).run();
+    if(done) {
+      // Reposts are flagged once per refresh so feed requests can read the
+      // stored flag instead of ranking every row on each call.
+      await markDuplicates(db);
+      await db.prepare('DELETE FROM leases WHERE key=\'ingestion\' AND owner=?').bind(id).run();
+    }
     return formatRun((await db.prepare('SELECT * FROM runs WHERE id=?').bind(id).first<RunRow>())!);
   } finally {await db.prepare('DELETE FROM leases WHERE key=? AND owner=?').bind(`step:${id}`,owner).run();}
 }

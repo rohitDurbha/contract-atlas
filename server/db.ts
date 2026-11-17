@@ -48,6 +48,7 @@ export async function ensureDB(db: D1Database): Promise<void> {
         for (const r of (seed as any).runs ?? []) {
           await db.prepare('INSERT OR IGNORE INTO runs(id,status,started_at,completed_at,source_count,success_count,new_count,job_count,cursor) VALUES(?,?,?,?,?,?,?,?,?)').bind(r.id,r.status,r.startedAt,r.completedAt,r.sourceCount,r.successCount,r.newCount,r.jobCount,r.processed ?? r.sourceCount).run();
         }
+        await markDuplicates(db);
         await db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('seeded','true')").run();
       }
     })();
