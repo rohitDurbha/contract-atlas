@@ -23,7 +23,7 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
   - [ ] c. Replace the `D1Database` type with a small database interface over `node:sqlite`, so `@cloudflare/workers-types` and the Drizzle D1 driver are no longer needed.
 - [ ] 4. Precompute the duplicate flag at collection time and add an index so feed requests do not run a window query on every call.
   - [x] a. Add a `duplicate` column to `jobs` (with a migration for snapshots that predate it) and a `markDuplicates` function that sets the flag in one statement for every reposted opening the feed currently hides. Add tests that compare it with the live window query.
-  - [ ] b. Run `markDuplicates` at the end of every refresh and when the snapshot is built, then switch `feedScopeSql` to read the flag instead of the window query.
+  - [x] b. Run `markDuplicates` at the end of every refresh and when the snapshot is built, then switch `feedScopeSql` to read the flag instead of the window query. Flags are also recomputed after pruning and after the seed loads, and `windowScopeSql` keeps the old query for checks. On the Nov 17 snapshot both list the same 845 roles with 81 reposts flagged.
   - [ ] c. Add an index that covers the flag and the freshness columns, and make `verify:free` fail when the stored flags disagree with a fresh window query.
 - [ ] 5. Mark sources with zero open roles clearly in the source directory and stop counting them as loaded.
   - [x] a. Flag readable sources that currently have no roles in the feed with an `empty` field on each source, and stop counting them as readable, complete or partial in the overview. Report them separately as `emptySources` so the API, the site and the MCP `list_sources` tool agree. Add tests.
