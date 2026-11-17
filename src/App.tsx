@@ -37,14 +37,13 @@ export default function App(){
   const [category,setCategory]=useState(''),[companies,setCompanies]=useState<string[]>([]),[modes,setModes]=useState<string[]>([]),[country,setCountry]=useState(''),[freshness,setFreshness]=useState(''),[onlyPay,setOnlyPay]=useState(false);
   const [sort,setSort]=useState('newest'),[page,setPage]=useState(1),[layout,setLayout]=useState<'grid'|'list'>('grid');
   const [selected,setSelected]=useState<Job|null>(null),[menu,setMenu]=useState(false),[filterOpen,setFilterOpen]=useState(false),[info,setInfo]=useState(false);
-  const [refresh,setRefresh]=useState<(Run & {processed?:number})|null>(null),[refreshing,setRefreshing]=useState(false),[notice,setNotice]=useState(''),[sourceQuery,setSourceQuery]=useState(''),[provider,setProvider]=useState('All providers');
+  const [refreshing,setRefreshing]=useState(false),[notice,setNotice]=useState(''),[sourceQuery,setSourceQuery]=useState(''),[provider,setProvider]=useState('All providers');
   const overview=useQuery({queryKey:['overview'],queryFn:()=>api<Overview>('/api/overview'),refetchInterval:60_000});
   const sources=useQuery({queryKey:['sources'],queryFn:()=>api<Source[]>('/api/sources'),refetchInterval:60_000});
   const params=new URLSearchParams({page:String(page),sort});
   if(search)params.set('q',search);if(searchLocation)params.set('location',searchLocation);if(category)params.set('category',category);if(country)params.set('country',country);if(freshness)params.set('freshness',freshness);if(onlyPay)params.set('pay','yes');companies.forEach(c=>params.append('company',c));modes.forEach(m=>params.append('mode',m));
   if(pageView==='saved') {if(saved.length)saved.forEach(id=>params.append('id',id));else params.append('id','__empty_saved__');}
   const feed=useQuery({queryKey:['jobs',params.toString(),pageView],queryFn:()=>api<Feed>(`/api/jobs?${params}`),enabled:pageView==='explore'||pageView==='saved',placeholderData:previous=>previous,refetchInterval:60_000});
-  const access=useQuery({queryKey:['access'],queryFn:()=>api<{canRefresh:boolean}>('/api/access')});
   const runs=useQuery({queryKey:['runs'],queryFn:()=>api<(Run & {processed:number})[]>('/api/runs'),enabled:pageView==='activity',refetchInterval:refreshing?3000:60_000});
   useEffect(()=>{setPage(1);},[search,searchLocation,category,companies,modes,country,freshness,onlyPay,sort,pageView]);
   useEffect(()=>{const focusSearch=(event:KeyboardEvent)=>{const tag=(event.target as HTMLElement)?.tagName;if(event.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(tag)){event.preventDefault();searchRef.current?.focus();}};window.addEventListener('keydown',focusSearch);return()=>window.removeEventListener('keydown',focusSearch);},[]);
@@ -60,17 +59,11 @@ export default function App(){
   async function refreshRoles(){
     if(refreshing)return;
     setRefreshing(true);
+    // Collection runs in GitHub Actions, so the button reloads the published snapshot.
     try {
-      if(!access.data?.canRefresh) {
-        await qc.invalidateQueries();
-        setNotice('Feed reloaded. Check source timestamps for collection freshness.');
-        return;
-      }
-      let r=await api<Run & {processed:number}>('/api/refresh',{method:'POST'});setRefresh(r);
-      while(r.status==='running') {const previous=r.processed;r=await api<Run & {processed:number}>(`/api/refresh/${r.id}/step`,{method:'POST'});setRefresh(r);qc.invalidateQueries({queryKey:['overview']});qc.invalidateQueries({queryKey:['sources']});if(r.status==='running'&&r.processed===previous)await new Promise(resolve=>setTimeout(resolve,1000));}
-      setNotice(`Refresh complete. ${r.newCount} new ${r.newCount===1?'role':'roles'} found. ${r.successCount} of ${r.sourceCount} sources connected.`);
-      await qc.invalidateQueries({queryKey:['jobs']});await qc.invalidateQueries({queryKey:['runs']});
-    } catch(e){setNotice(e instanceof Error?e.message:'Refresh interrupted. You can resume with Refresh roles.');}
+      await qc.invalidateQueries();
+      setNotice('Feed reloaded. Check source timestamps for collection freshness.');
+    } catch {setNotice('The feed could not be reloaded. Try again shortly.');}
     finally{setRefreshing(false);}
   }
   function openJob(job:Job){setSelected(job);const u=new URL(window.location.href);u.searchParams.set('job',job.id);history.replaceState(null,'',u);}
@@ -97,7 +90,7 @@ export default function App(){
       </div>
     </aside>
     <main>
-      <header className="topbar"><div className="breadcrumb"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={()=>setMenu(!menu)}><Menu size={21}/></button><span>Workspace</span><ChevronRight size={13}/><strong>{pageView==='explore'?'Explore roles':pageView==='saved'?'Saved roles':pageView==='sources'?'Source directory':'Refresh activity'}</strong></div><div className="topbar-actions"><span className="freshness-indicator"><span className={stats?.scheduleEnabled?'live-dot':'neutral-dot'}/>{stats?.scheduleEnabled?'Two-hour checks scheduled':'Verified source data'}</span><button className="refresh-button" disabled={refreshing} onClick={refreshRoles}><RefreshCw size={15} className={refreshing?'spin':''}/>{refreshing?(access.data?.canRefresh?`Checking ${refresh?.processed || 0}/${stats?.sourceCount || 58}`:'Loading feed…'):(access.data?.canRefresh?'Refresh roles':'Reload feed')}</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={()=>setMenu(!menu)}><Menu size={21}/></button><span>Workspace</span><ChevronRight size={13}/><strong>{pageView==='explore'?'Explore roles':pageView==='saved'?'Saved roles':pageView==='sources'?'Source directory':'Refresh activity'}</strong></div><div className="topbar-actions"><span className="freshness-indicator"><span className={stats?.scheduleEnabled?'live-dot':'neutral-dot'}/>{stats?.scheduleEnabled?'Two-hour checks scheduled':'Verified source data'}</span><button className="refresh-button" disabled={refreshing} onClick={refreshRoles}><RefreshCw size={15} className={refreshing?'spin':''}/>{refreshing?'Loading feed…':'Reload feed'}</button></div></header>
       <div className="main-content">
         {(pageView==='explore'||pageView==='saved')&&<>
           <section className="hero">
@@ -126,8 +119,7 @@ export default function App(){
         </>}
         {pageView==='activity'&&<>
           <PageHeading eyebrow="YOUR ALWAYS-ON JOB RADAR" title="Fresh roles. Clear signals." text="Follow each collection run and see exactly when your sources were checked."/>
-          <div className="activity-banner"><span className="activity-icon"><Radio size={26}/></span><div><h2>{stats?.scheduleEnabled?'Two-hour source checks are scheduled.':'Your job radar is ready.'}</h2><p>{stats?.nextRefreshAt?`Next scheduled window: ${localDate(stats.nextRefreshAt)}. Source checks run automatically; start times can vary.`:'View source check times below to see how current the published feed is.'}</p></div><button onClick={refreshRoles} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/> {access.data?.canRefresh?'Check now':'Reload feed'}</button></div>
-          {refreshing&&access.data?.canRefresh&&<div className="progress-block"><div><strong>Checking your communities</strong><span>{refresh?.processed||0} / {refresh?.sourceCount||stats?.sourceCount||0}</span></div><progress max={refresh?.sourceCount||58} value={refresh?.processed||0}/><p>Existing listings stay available while new roles are collected.</p></div>}
+          <div className="activity-banner"><span className="activity-icon"><Radio size={26}/></span><div><h2>{stats?.scheduleEnabled?'Two-hour source checks are scheduled.':'Your job radar is ready.'}</h2><p>{stats?.nextRefreshAt?`Next scheduled window: ${localDate(stats.nextRefreshAt)}. Source checks run automatically; start times can vary.`:'View source check times below to see how current the published feed is.'}</p></div><button onClick={refreshRoles} disabled={refreshing}><RefreshCw size={16} className={refreshing?'spin':''}/> Reload feed</button></div>
           <div className="run-table"><div className="table-heading"><h2>Refresh history</h2><span>Latest 20 runs</span></div>{!runs.data?.length?<Empty icon={<Clock3 size={28}/>} title="Your first chapter starts here." text="Refresh roles to begin collecting. Every run will appear here with its results."/>:<div className="table-scroll"><table><thead><tr><th>Started</th><th>Outcome</th><th>Connected sources</th><th>New roles</th><th>Roles checked</th></tr></thead><tbody>{runs.data.map(r=><tr key={r.id}><td>{localDate(r.startedAt)}</td><td><span className={`status-badge ${r.status==='completed'?'healthy':r.status==='running'?'pending':'blocked'}`}><span/>{r.status==='partial'?'Partially completed':r.status[0].toUpperCase()+r.status.slice(1)}</span></td><td>{r.successCount} / {r.sourceCount}</td><td>{r.newCount}</td><td>{r.jobCount}</td></tr>)}</tbody></table></div>}</div>
           <div className="activity-explainer"><div><span>01</span><h3>Collect from the source</h3><p>Public APIs and structured listings bring in opportunities directly from company talent communities.</p></div><div><span>02</span><h3>Keep the feed clean</h3><p>Stable source IDs prevent duplicates. Posting dates stay separate from the time a role was discovered.</p></div><div><span>03</span><h3>Make freshness visible</h3><p>Restricted or unavailable sources keep their last successful data. Source health tells you what happened.</p></div></div>
         </>}
