@@ -87,6 +87,11 @@ export async function markDuplicates(db: D1Database, now=new Date()): Promise<nu
   const row=await db.prepare('SELECT count(*) AS n FROM jobs WHERE duplicate=1').first<{n:number}>();
   return Number(row?.n ?? 0);
 }
+// The original per-request scope that ranks reposts on the fly. The feed no
+// longer runs it, but checks use it to confirm the stored flags still agree.
+export function windowScopeSql(now=new Date()):string {
+  return `(${baseScopeSql('',now)} AND id IN (SELECT id FROM (${repostRankSql(now)}) WHERE rank=1))`;
+}
 export function feedScopeSql(alias='' , now=new Date()):string {
   if(alias && !/^[a-z_]+$/.test(alias))throw new Error('Invalid SQL alias');
   const prefix=alias?alias+'.':'';

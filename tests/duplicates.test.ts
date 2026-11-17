@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { openSQLite } from '../server/sqlite';
-import { ensureDB, jobStatement, markDuplicates, feedScopeSql } from '../server/db';
+import { ensureDB, jobStatement, markDuplicates, feedScopeSql, windowScopeSql } from '../server/db';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
 
@@ -69,7 +69,7 @@ describe('markDuplicates', () => {
     } finally { close(); }
   });
 
-  it('agrees with the window query the feed runs today', async () => {
+  it('lists exactly what the window query would list', async () => {
     const { db, close } = openSQLite(':memory:');
     try {
       await ensureDB(db);
@@ -82,7 +82,52 @@ describe('markDuplicates', () => {
       await markDuplicates(db, now);
       const listed = await ids(db, feedScopeSql('', now));
       expect(listed).toHaveLength(6);
-      expect(await ids(db, 'duplicate=0')).toEqual(listed);
+      expect(listed).toEqual(await ids(db, windowScopeSql(now)));
+    } finally { close(); }
+  });
+});
+
+describe('feed scope with stored flags', () => {
+  const now = new Date('2026-11-01T00:00:00Z');
+  const day = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
+
+  it('hides a flagged row even when no newer copy exists', async () => {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      await db.prepare('DELETE FROM jobs').run();
+      const job = makeJob(SOURCES[0], { sourceJobId: 'only', title: 'Data Engineer', location: 'Remote', applyUrl: 'https://example.com/only', postedAt: day(1) }, day(0))!;
+      await jobStatement(db, job).run();
+      const listed = async () => (await db.prepare(`SELECT count(*) AS n FROM jobs WHERE ${feedScopeSql('', now)}`).first<any>()).n;
+      expect(await listed()).toBe(1);
+      await db.prepare('UPDATE jobs SET duplicate=1').run();
+      expect(await listed()).toBe(0);
+      // A refresh clears a stale flag once the row is the newest copy again.
+      await markDuplicates(db, now);
+      expect(await listed()).toBe(1);
+    } finally { close(); }
+  });
+
+  it('keeps an upsert from resetting a stored flag', async () => {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      await db.prepare('DELETE FROM jobs').run();
+      const job = makeJob(SOURCES[0], { sourceJobId: 'kept', title: 'Data Engineer', location: 'Remote', applyUrl: 'https://example.com/kept', postedAt: day(1) }, day(0))!;
+      await jobStatement(db, job).run();
+      await db.prepare('UPDATE jobs SET duplicate=1').run();
+      await jobStatement(db, { ...job, title: 'Senior Data Engineer' }).run();
+      expect((await db.prepare('SELECT duplicate FROM jobs').first<any>()).duplicate).toBe(1);
+    } finally { close(); }
+  });
+
+  it('flags the seeded snapshot so a fresh database matches the window query', async () => {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      const flagged = await db.prepare(`SELECT id FROM jobs WHERE ${feedScopeSql()} ORDER BY id`).all<any>();
+      const ranked = await db.prepare(`SELECT id FROM jobs WHERE ${windowScopeSql()} ORDER BY id`).all<any>();
+      expect(flagged.results).toEqual(ranked.results);
     } finally { close(); }
   });
 });
