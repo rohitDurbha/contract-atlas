@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coverageNotice, directorySummary, readableSourcesNote, sourceBadge } from '../src/sourceLabels';
+import { ALL_PROVIDERS, coverageNotice, directorySummary, filterSources, readableSourcesNote, sourceBadge } from '../src/sourceLabels';
 import { sourceHealth } from '../server/db';
 import type { Source } from '../src/types';
 
@@ -54,5 +54,28 @@ describe('home page coverage wording', () => {
   it('does not report a gap when the only shortfall is sources with no open roles', () => {
     expect(coverageNotice(overview([sources[0], sources[2]]))).toBeNull();
     expect(coverageNotice(undefined)).toBeNull();
+  });
+});
+
+describe('source directory filter', () => {
+  const ids = (list: Source[]) => list.map(s => s.id);
+  const all = { query: '', provider: ALL_PROVIDERS, showEmpty: true };
+
+  it('shows every source by default, including those with no open roles', () => {
+    expect(ids(filterSources(sources, all))).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('hides only sources with no open roles when asked', () => {
+    expect(ids(filterSources(sources, { ...all, showEmpty: false }))).toEqual(['a', 'b', 'd']);
+  });
+
+  it('keeps unreadable sources visible because they are not empty feeds', () => {
+    expect(filterSources(sources, { ...all, showEmpty: false }).some(s => s.status === 'blocked')).toBe(true);
+  });
+
+  it('combines the empty filter with the provider and search filters', () => {
+    expect(ids(filterSources(sources, { ...all, provider: 'Workday', showEmpty: false }))).toEqual(['a', 'd']);
+    expect(ids(filterSources(sources, { ...all, query: '  green ' }))).toEqual(['b']);
+    expect(ids(filterSources(sources, { ...all, query: 'nobody' }))).toEqual([]);
   });
 });
