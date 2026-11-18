@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { openSQLite } from '../server/sqlite';
-import { ensureDB, jobStatement, markDuplicates, feedScopeSql, windowScopeSql } from '../server/db';
+import { ensureDB, jobStatement, markDuplicates, feedScopeSql, windowScopeSql, duplicateFlagDrift } from '../server/db';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
 import type { Database } from '../server/database.js';
@@ -163,6 +163,48 @@ describe('feed scope with stored flags', () => {
       const flagged = await db.prepare(`SELECT id FROM jobs WHERE ${feedScopeSql()} ORDER BY id`).all<any>();
       const ranked = await db.prepare(`SELECT id FROM jobs WHERE ${windowScopeSql()} ORDER BY id`).all<any>();
       expect(flagged.results).toEqual(ranked.results);
+    } finally { close(); }
+  });
+});
+
+describe('duplicateFlagDrift', () => {
+  const now = new Date('2026-11-01T00:00:00Z');
+  const day = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
+  const put = async (db: Database, id: string, postedAt: string) => {
+    const job = makeJob(SOURCES[0], { sourceJobId: id, title: 'Data Engineer', location: 'Remote', applyUrl: `https://example.com/${id}`, postedAt }, day(0))!;
+    await jobStatement(db, job).run();
+  };
+  const setup = async () => {
+    const opened = openSQLite(':memory:');
+    await ensureDB(opened.db);
+    await opened.db.prepare('DELETE FROM jobs').run();
+    await put(opened.db, 'new', day(1));
+    await put(opened.db, 'old', day(4));
+    return opened;
+  };
+
+  it('reports nothing when the flags are current', async () => {
+    const { db, close } = await setup();
+    try {
+      await markDuplicates(db, now);
+      expect(await duplicateFlagDrift(db, now)).toEqual({ hidden: [], extra: [] });
+    } finally { close(); }
+  });
+
+  it('reports reposts that were never flagged', async () => {
+    const { db, close } = await setup();
+    try {
+      // New rows arrive unflagged, so skipping markDuplicates lists both copies.
+      expect(await duplicateFlagDrift(db, now)).toEqual({ hidden: [], extra: [`${SOURCES[0].id}:old`] });
+    } finally { close(); }
+  });
+
+  it('reports a listed role that a stale flag hides', async () => {
+    const { db, close } = await setup();
+    try {
+      await markDuplicates(db, now);
+      await db.prepare("UPDATE jobs SET duplicate=1 WHERE id LIKE '%:new'").run();
+      expect(await duplicateFlagDrift(db, now)).toEqual({ hidden: [`${SOURCES[0].id}:new`], extra: [] });
     } finally { close(); }
   });
 });

@@ -102,6 +102,15 @@ export async function markDuplicates(db: Database, now=new Date()): Promise<numb
 export function windowScopeSql(now=new Date()):string {
   return `(${baseScopeSql('',now)} AND id IN (SELECT id FROM (${repostRankSql(now)}) WHERE rank=1))`;
 }
+// Compares the stored flags with a fresh window query at the same moment.
+// hidden lists roles the window query would show but the flags hide, and
+// extra lists roles the flags show that the window query would collapse.
+// Both are empty when the snapshot's flags are current.
+export async function duplicateFlagDrift(db: Database, now=new Date()): Promise<{hidden:string[];extra:string[]}> {
+  const ids=async(where:string)=>new Set((await db.prepare(`SELECT id FROM jobs WHERE ${where}`).all<{id:string}>()).results.map(r=>r.id));
+  const [stored,window]=await Promise.all([ids(feedScopeSql('',now)),ids(windowScopeSql(now))]);
+  return {hidden:[...window].filter(id=>!stored.has(id)).sort(),extra:[...stored].filter(id=>!window.has(id)).sort()};
+}
 export function feedScopeSql(alias='' , now=new Date()):string {
   if(alias && !/^[a-z_]+$/.test(alias))throw new Error('Invalid SQL alias');
   const prefix=alias?alias+'.':'';
