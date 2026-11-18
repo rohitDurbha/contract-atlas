@@ -32,6 +32,20 @@ export function directorySummary(sources: Source[]): DirectorySummary {
   };
 }
 
+export const ALL_PROVIDERS = 'All providers';
+
+export interface DirectoryFilter { query: string; provider: string; showEmpty: boolean }
+
+// Sources shown in the directory grid. Search matches the company or provider name,
+// and sources with no open roles can be hidden so the grid only lists live feeds.
+export function filterSources(sources: Source[], filter: DirectoryFilter): Source[] {
+  const query = filter.query.trim().toLowerCase();
+  return sources.filter(s =>
+    (filter.provider === ALL_PROVIDERS || s.provider === filter.provider)
+    && (filter.showEmpty || !s.empty)
+    && `${s.company} ${s.provider}`.toLowerCase().includes(query));
+}
+
 type Counts = Pick<Overview, 'sourceCount' | 'healthySources' | 'completeSources' | 'partialSources' | 'emptySources'>;
 
 // Subtitle under the readable sources metric on the home page.
