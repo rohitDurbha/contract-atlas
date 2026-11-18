@@ -26,6 +26,40 @@ describe('duplicate column migration', () => {
       expect(await columns(db)).toContain('duplicate');
       const row = await db.prepare("SELECT duplicate FROM jobs WHERE id='old:1'").first<any>();
       expect(row.duplicate).toBe(0);
+      expect(await indexes(db)).toContain('jobs_feed');
+    } finally { close(); }
+  });
+});
+
+const indexes = async (db: Database) =>
+  (await db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='jobs'").all<any>()).results.map((r: any) => r.name);
+
+describe('feed index', () => {
+  it('replaces the old freshness index with one that covers the flag', async () => {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await db.exec('CREATE TABLE jobs (id TEXT PRIMARY KEY,source_id TEXT NOT NULL,company TEXT NOT NULL,title TEXT NOT NULL,location TEXT NOT NULL,country TEXT NOT NULL,work_mode TEXT NOT NULL,category TEXT NOT NULL,pay_min REAL,pay_max REAL,posted_at TEXT,first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,apply_url TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,data TEXT NOT NULL,UNIQUE(source_id,apply_url))');
+      await db.exec('CREATE INDEX jobs_freshness ON jobs(active,posted_at DESC,first_seen_at DESC)');
+      await ensureDB(db);
+      const names = await indexes(db);
+      expect(names).toContain('jobs_feed');
+      expect(names).not.toContain('jobs_freshness');
+    } finally { close(); }
+  });
+
+  it('is the index feed queries search with', async () => {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      const plan = async (sql: string) =>
+        (await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all<any>()).results.map((r: any) => r.detail).join(' | ');
+      const count = await plan(`SELECT count(*) FROM jobs WHERE ${feedScopeSql()}`);
+      expect(count).toContain('jobs_feed (active=? AND duplicate=?)');
+      // The default listing order comes straight from the index, so the
+      // first page can stop after enough rows instead of sorting them all.
+      const page = await plan(`SELECT * FROM jobs WHERE ${feedScopeSql()} ORDER BY posted_at DESC, first_seen_at DESC LIMIT 18`);
+      expect(page).toContain('jobs_feed');
+      expect(page).not.toContain('TEMP B-TREE');
     } finally { close(); }
   });
 });

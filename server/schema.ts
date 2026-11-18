@@ -5,7 +5,8 @@ export const jobs = sqliteTable('jobs', {
   workMode: text('work_mode').notNull(), category: text('category').notNull(), payMin: real('pay_min'),
   payMax: real('pay_max'), postedAt: text('posted_at'), firstSeenAt: text('first_seen_at').notNull(),
   lastSeenAt: text('last_seen_at').notNull(), applyUrl: text('apply_url').notNull(), active: integer('active').notNull().default(1), data: text('data').notNull(),
-}, t => [index('jobs_freshness').on(t.active,t.postedAt),index('jobs_filter').on(t.company,t.category,t.workMode)]);
+  duplicate: integer('duplicate').notNull().default(0),
+}, t => [index('jobs_feed').on(t.active,t.duplicate,t.postedAt,t.firstSeenAt),index('jobs_filter').on(t.company,t.category,t.workMode)]);
 export const sources = sqliteTable('sources', {
   id: text('id').primaryKey(), company: text('company').notNull(), provider: text('provider').notNull(),
   url: text('url').notNull(), country: text('country').notNull(), status: text('status').notNull().default('pending'),

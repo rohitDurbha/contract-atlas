@@ -10,7 +10,10 @@ import type { Database, Statement } from './database.js';
 const DDL = [
   'CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY,company TEXT NOT NULL,provider TEXT NOT NULL,url TEXT NOT NULL,country TEXT NOT NULL,status TEXT NOT NULL DEFAULT \'pending\',last_checked_at TEXT,last_success_at TEXT,message TEXT)',
   'CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY,source_id TEXT NOT NULL,company TEXT NOT NULL,title TEXT NOT NULL,location TEXT NOT NULL,country TEXT NOT NULL,work_mode TEXT NOT NULL,category TEXT NOT NULL,pay_min REAL,pay_max REAL,posted_at TEXT,first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,apply_url TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,data TEXT NOT NULL,duplicate INTEGER NOT NULL DEFAULT 0,UNIQUE(source_id,apply_url))',
-  'CREATE INDEX IF NOT EXISTS jobs_freshness ON jobs(active,posted_at DESC,first_seen_at DESC)',
+  // Feed queries filter on active and the stored repost flag, then sort by
+  // freshness, so one index serves the filter and the default order. It
+  // replaces jobs_freshness, which did not include the flag.
+  'DROP INDEX IF EXISTS jobs_freshness',
   'CREATE INDEX IF NOT EXISTS jobs_filters ON jobs(company,category,work_mode)',
   'CREATE INDEX IF NOT EXISTS jobs_sources ON jobs(source_id,active,last_seen_at)',
   'CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY,status TEXT NOT NULL,started_at TEXT NOT NULL,completed_at TEXT,source_count INTEGER NOT NULL DEFAULT 0,success_count INTEGER NOT NULL DEFAULT 0,new_count INTEGER NOT NULL DEFAULT 0,job_count INTEGER NOT NULL DEFAULT 0,cursor INTEGER NOT NULL DEFAULT 0)',
@@ -29,6 +32,11 @@ async function addMissingColumns(db: Database): Promise<void> {
     if (!found) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
   }
 }
+// Indexes on columns that older snapshots gain through addMissingColumns,
+// so they are created only once those columns exist.
+const LATE_INDEXES=[
+  'CREATE INDEX IF NOT EXISTS jobs_feed ON jobs(active,duplicate,posted_at DESC,first_seen_at DESC)',
+];
 const ready = new WeakMap<Database, Promise<void>>();
 export async function ensureDB(db: Database): Promise<void> {
   if (!db) throw new Error('The database binding is unavailable.');
@@ -38,6 +46,7 @@ export async function ensureDB(db: Database): Promise<void> {
     pending=(async()=> {
       await db.batch(DDL.map(s=>db.prepare(s)));
       await addMissingColumns(db);
+      await db.batch(LATE_INDEXES.map(s=>db.prepare(s)));
       await db.batch(SOURCES.map(s=>db.prepare('INSERT INTO sources(id,company,provider,url,country) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET company=excluded.company,provider=excluded.provider,url=excluded.url,country=excluded.country').bind(s.id,s.company,s.provider,s.url,s.country)));
       const seeded=await db.prepare("SELECT value FROM settings WHERE key='seeded'").first();
       if (!seeded && seed.jobs.length) {
