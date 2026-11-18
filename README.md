@@ -11,6 +11,7 @@ You can browse the live feed at **https://contract-atlas-amber.vercel.app**.
 - Shows a single listing when a company reposts the same opening under several requisition IDs.
 - Offers search, filters for company, category, work mode and country, sorting by date or pay, and saved roles that stay on the visitor's own device.
 - Reports the health of every source, including whether its last collection was complete or only partial.
+- Marks sources that were read successfully but have no open roles right now with a "No open roles" badge. They are counted on their own rather than as loaded feeds, and the source directory has a button that hides or shows them. Every source is shown by default, and the choice resets when the page reloads.
 
 Every listing comes from a real public posting. The collector respects robots.txt, login walls and access restrictions, and it never invents or generates job data.
 
