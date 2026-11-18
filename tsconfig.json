@@ -16,7 +16,6 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "types": [
-      "@cloudflare/workers-types",
       "node",
       "vite/client"
     ]
