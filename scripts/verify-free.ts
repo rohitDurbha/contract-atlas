@@ -4,12 +4,21 @@ import { openSQLite } from '../server/sqlite';
 import { freeFetch } from '../server/free-runtime';
 import { readFile } from 'node:fs/promises';
 import { isPayModel } from '../server/pay-model';
+import { duplicateFlagDrift } from '../server/db';
 const {db,close}=openSQLite(resolve('data/atlas.sqlite'),true);
 try {
   const integrity=await db.prepare('PRAGMA quick_check').first<string>('quick_check');
   if(integrity!=='ok')throw new Error('Snapshot integrity check failed; publishing stopped.');
   const invalid=await db.prepare("SELECT count(*) n FROM jobs WHERE NOT json_valid(data) OR trim(title)='' OR apply_url NOT LIKE 'https://%'").first<any>();
   if(invalid.n)throw new Error('Snapshot contains malformed job records; publishing stopped.');
+  // The feed trusts the stored repost flags, so a snapshot whose flags
+  // disagree with a fresh window query would list or hide the wrong roles.
+  const drift=await duplicateFlagDrift(db);
+  if(drift.hidden.length||drift.extra.length)throw new Error(`Stored repost flags disagree with the window query (${drift.hidden.length} hidden, ${drift.extra.length} extra, for example ${[...drift.hidden,...drift.extra].slice(0,3).join(', ')}); publishing stopped.`);
+  const feedIndex=await db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='index' AND name='jobs_feed'").first();
+  if(!feedIndex)throw new Error('Snapshot is missing the jobs_feed index; publishing stopped.');
+  const listed=await db.prepare("SELECT count(*) n FROM jobs WHERE duplicate=1").first<any>();
+  console.log(JSON.stringify({repostFlags:'current',flagged:listed.n}));
   const fetcher=freeFetch(db);
   for(const path of ['/api/overview','/api/sources','/api/jobs?q=Data%20Labeling%20Analyst','/api/jobs?page=2','/api/jobs?sort=pay']) {
     const response=await fetcher(new Request('https://atlas.test'+path));if(response.status!==200)throw new Error(`Snapshot verification failed: ${path}`);
