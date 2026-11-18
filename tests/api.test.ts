@@ -1,34 +1,21 @@
-import { DatabaseSync } from 'node:sqlite';
 import { describe,it,expect } from 'vitest';
 import worker from '../server/index';
 import { ensureDB,jobStatement,markDuplicates } from '../server/db';
 import { startRun } from '../server/ingestion';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
+import { openSQLite } from '../server/sqlite';
+import type { Database } from '../server/database';
 
-function sqliteD1(): D1Database {
-  const db=new DatabaseSync(':memory:');
-  const prepare=(query:string)=> {
-    let values:any[]=[];
-    const statement={
-      bind(...params:any[]){values=params;return statement;},
-      async first(column?:string){const row=db.prepare(query).get(...values);return column?row?.[column]:row||null;},
-      async all(){const result=db.prepare(query).all(...values);return {results:result,success:true,meta:{}};},
-      async raw(){const s=db.prepare(query);s.setReturnArrays(true);return s.all(...values);},
-      async run(){const r=db.prepare(query).run(...values);return {success:true,results:[],meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}};},
-    };return statement;
-  };
-  return {prepare,async batch(statements:any[]){return Promise.all(statements.map(s=>s.all()));},async exec(query:string){db.exec(query);return {count:0,duration:0};}} as unknown as D1Database;
-}
-async function addRole(db:D1Database,sourceId:string,postedAt=new Date(Date.now()-86400000).toISOString()){
+const memoryDb=():Database=>openSQLite(':memory:').db;
+async function addRole(db:Database,sourceId:string,postedAt=new Date(Date.now()-86400000).toISOString()){
   const source=SOURCES.find(s=>s.id===sourceId)!,now=new Date().toISOString();
   await jobStatement(db,makeJob(source,{sourceJobId:'open-'+sourceId,title:'Software Engineer',applyUrl:'https://example.com/jobs/'+sourceId,postedAt,description:'Builds software.'},now)!).run();
 }
-const ctx={waitUntil(){},passThroughOnException(){},props:{}} as unknown as ExecutionContext;
-async function request(db:D1Database,path:string,options?:RequestInit){return worker.fetch(new Request('https://atlas.test'+path,options),{DB:db},ctx);}
+async function request(db:Database,path:string,options?:RequestInit){return worker.fetch(new Request('https://atlas.test'+path,options),{DB:db});}
 describe('database-backed API',()=> {
   it('shares the 90-day technical-role policy across search, details, facets, and counts',async()=>{
-    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    const db=memoryDb();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
     const recent=new Date(Date.now()-86400000).toISOString(),old=new Date(Date.now()-95*86400000).toISOString();
     const titles=['Software Engineer','Data Analyst','AI/ML Engineer','Research Scientist','Retail Associate','Account Manager','Data Center Technician','Data Entry Clerk','Data Engineer','ML Engineer','Software Developer'];
     for(let i=0;i<titles.length;i++){
@@ -45,7 +32,7 @@ describe('database-backed API',()=> {
   });
 
   it('lists one posting per repeated role and hides permanent roles',async()=>{
-    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    const db=memoryDb();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
     const day=(n:number)=>new Date(Date.now()-n*86400000).toISOString();
     const add=(id:string,title:string,location:string,postedAt:string,employmentType='Contract')=>jobStatement(db,{...makeJob(SOURCES[0],{sourceJobId:id,title,location,applyUrl:'https://example.com/jobs/'+id,postedAt},day(0))!,employmentType}).run();
     await add('a','Data Labeling Analyst II','Bell Gardens, CA',day(5));
@@ -62,21 +49,21 @@ describe('database-backed API',()=> {
     expect((await request(db,'/api/jobs/meta:a')).status).toBe(404);
   });
   it('provides pagination, multi-filter intersections, and safe literal search',async()=> {
-    const db=sqliteD1();await ensureDB(db);
+    const db=memoryDb();await ensureDB(db);
     const response=await request(db,'/api/jobs?mode=Remote&category=Engineering+%26+IT');
     expect(response.status).toBe(200);const data=await response.json() as any;
     expect(data.jobs.every((j:any)=>j.workMode==='Remote'&&j.category==='Engineering & IT')).toBe(true);expect(data.jobs.length).toBeLessThanOrEqual(18);
     const malicious=await request(db,"/api/jobs?q=%27%20OR%201%3D1%20--");expect((await malicious.json() as any).total).toBe(0);
   });
   it('upserts without creating duplicate roles or resetting first discovery',async()=> {
-    const db=sqliteD1();await ensureDB(db);const s=SOURCES[0];
+    const db=memoryDb();await ensureDB(db);const s=SOURCES[0];
     const first=makeJob(s,{sourceJobId:'stable-id',title:'Data Engineer',postedAt:new Date().toISOString(),applyUrl:'https://us.meta.talentnet.community/jobs/stable-id'},'2026-09-01T00:00:00.000Z')!;
     await jobStatement(db,first).run();await jobStatement(db,{...first,title:'Senior Data Engineer',firstSeenAt:'2026-09-30T00:00:00.000Z',lastSeenAt:'2026-09-30T00:00:00.000Z'}).run();
     const r=await request(db,'/api/jobs?id=meta%3Astable-id');const d=await r.json() as any;
     expect(d.total).toBe(1);expect(d.jobs[0].title).toBe('Senior Data Engineer');expect(d.jobs[0].firstSeenAt).toBe('2026-09-01T00:00:00.000Z');expect(d.jobs[0].lastSeenAt).toBe('2026-09-30T00:00:00.000Z');
   });
   it('hides archived restricted sources and roles without deleting history',async()=> {
-    const db=sqliteD1();await ensureDB(db);
+    const db=memoryDb();await ensureDB(db);
     await db.prepare("INSERT OR IGNORE INTO sources(id,company,provider,url,country,status) VALUES('adm','ADM','TalentNet','https://example.com','US','blocked')").run();
     const job=makeJob({...SOURCES[0],id:'adm',company:'ADM'},{sourceJobId:'archived',title:'Archived Analyst',applyUrl:'https://example.com/jobs/1'},'2026-09-01T00:00:00Z')!;
     await jobStatement(db,job).run();
@@ -87,10 +74,10 @@ describe('database-backed API',()=> {
     expect(await db.prepare("SELECT id FROM sources WHERE id='adm'").first()).toBeTruthy();
   });
   it('shares a refresh run across repeated triggers',async()=> {
-    const db=sqliteD1();await ensureDB(db);const a=await startRun(db),b=await startRun(db);expect(a.id).toBe(b.id);
+    const db=memoryDb();await ensureDB(db);const a=await startRun(db),b=await startRun(db);expect(a.id).toBe(b.id);
   });
   it('exposes no write routes and reports that refresh runs elsewhere',async()=> {
-    const db=sqliteD1();await ensureDB(db);
+    const db=memoryDb();await ensureDB(db);
     const runs=await db.prepare('SELECT count(*) AS n FROM runs').first<any>();
     for(const path of ['/api/refresh','/api/refresh/00000000-0000-0000-0000-000000000000/step','/api/settings/schedule'])
       expect((await request(db,path,{method:'POST',body:'{"enabled":true}'})).status).toBe(404);
@@ -100,15 +87,15 @@ describe('database-backed API',()=> {
     expect(worker).not.toHaveProperty('scheduled');
   });
   it('answers unknown non-API paths with a JSON 404 instead of a static asset fallback',async()=> {
-    const db=sqliteD1();const response=await request(db,'/index.html');
+    const db=memoryDb();const response=await request(db,'/index.html');
     expect(response.status).toBe(404);expect(await response.json()).toEqual({error:'Not found.'});
   });
   it('exposes original source health',async()=> {
-    const db=sqliteD1();
+    const db=memoryDb();
     const response=await request(db,'/api/sources');const sources=await response.json() as any[];expect(sources).toHaveLength(43);expect(sources.every(s=>typeof s.status==='string')).toBe(true);
   });
   it('distinguishes fully retrieved feeds from readable but partial feeds',async()=>{
-    const db=sqliteD1();await ensureDB(db);
+    const db=memoryDb();await ensureDB(db);
     await db.prepare("UPDATE sources SET status='error'").run();
     await db.prepare("UPDATE sources SET status='healthy' WHERE id IN ('meta','pinterest')").run();
     await db.prepare("INSERT INTO source_coverage(source_id,complete,advertised_count,fetched_count,checked_at) VALUES('meta',1,298,298,?) ON CONFLICT(source_id) DO UPDATE SET complete=1,advertised_count=298,fetched_count=298").bind('2026-09-30T22:00:00.000Z').run();
@@ -122,7 +109,7 @@ describe('database-backed API',()=> {
     expect(overview).toMatchObject({healthySources:2,completeSources:1,partialSources:1,emptySources:0});
   });
   it('marks readable sources with no open roles as empty and leaves them out of the loaded counts',async()=>{
-    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    const db=memoryDb();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
     await db.prepare("UPDATE sources SET status='error'").run();
     await db.prepare("UPDATE sources SET status='healthy' WHERE id IN ('meta','pinterest','boeing')").run();
     await db.prepare("INSERT INTO source_coverage(source_id,complete,advertised_count,fetched_count,checked_at) VALUES('meta',1,1,1,?),('pinterest',1,0,0,?),('boeing',0,0,0,?) ON CONFLICT(source_id) DO UPDATE SET complete=excluded.complete").bind('2026-09-30T22:00:00.000Z','2026-09-30T22:00:00.000Z','2026-09-30T22:00:00.000Z').run();
@@ -136,7 +123,7 @@ describe('database-backed API',()=> {
     expect(overview).toMatchObject({sourceCount:43,healthySources:1,completeSources:1,partialSources:0,emptySources:2});
   });
   it('treats a source whose only roles fall outside the feed window as empty',async()=>{
-    const db=sqliteD1();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
+    const db=memoryDb();await ensureDB(db);await db.prepare('DELETE FROM jobs').run();
     await db.prepare("UPDATE sources SET status='healthy' WHERE id='meta'").run();
     await addRole(db,'meta',new Date(Date.now()-120*86400000).toISOString());
     const meta=(await (await request(db,'/api/sources')).json() as any[]).find(s=>s.id==='meta');

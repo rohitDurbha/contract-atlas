@@ -3,8 +3,9 @@ import { openSQLite } from '../server/sqlite';
 import { ensureDB, jobStatement, markDuplicates, feedScopeSql, windowScopeSql } from '../server/db';
 import { makeJob } from '../server/normalize';
 import { SOURCES } from '../server/sources';
+import type { Database } from '../server/database.js';
 
-const columns = async (db: D1Database) =>
+const columns = async (db: Database) =>
   (await db.prepare("SELECT name FROM pragma_table_info('jobs')").all<any>()).results.map((r: any) => r.name);
 
 describe('duplicate column migration', () => {
@@ -32,11 +33,11 @@ describe('duplicate column migration', () => {
 describe('markDuplicates', () => {
   const now = new Date('2026-11-01T00:00:00Z');
   const day = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
-  const put = async (db: D1Database, id: string, title: string, location: string, postedAt: string, extra: Record<string, unknown> = {}) => {
+  const put = async (db: Database, id: string, title: string, location: string, postedAt: string, extra: Record<string, unknown> = {}) => {
     const job = makeJob(SOURCES[0], { sourceJobId: id, title, location, applyUrl: `https://example.com/${id}`, postedAt }, day(0))!;
     await jobStatement(db, { ...job, ...extra }).run();
   };
-  const ids = async (db: D1Database, where: string) =>
+  const ids = async (db: Database, where: string) =>
     (await db.prepare(`SELECT id FROM jobs WHERE ${where} ORDER BY id`).all<any>()).results.map((r: any) => r.id.split(':')[1]);
 
   it('flags every older repost and keeps the newest posting of each opening', async () => {
