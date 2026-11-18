@@ -7,6 +7,7 @@
 import { feedScopeSql, hydrate } from './db.js';
 import { SOURCES } from './sources.js';
 import type { Job } from '../src/types.js';
+import type { Database } from './database.js';
 
 export const MIN_RESUME_CHARS = 80;
 export const MAX_RESUME_CHARS = 30_000;
@@ -144,8 +145,8 @@ export function buildIndex(jobs: Job[]): RoleIndex {
   return { builtAt: Date.now(), idf, roles: jobs.map((job, i) => ({ job, weights: weigh(counts[i], idf), skills: roleSkills(job) })) };
 }
 
-const cache = new WeakMap<D1Database, Promise<RoleIndex>>();
-async function loadIndex(db: D1Database, now?: Date): Promise<RoleIndex> {
+const cache = new WeakMap<Database, Promise<RoleIndex>>();
+async function loadIndex(db: Database, now?: Date): Promise<RoleIndex> {
   if (now) return buildIndex(await feedRoles(db, now));
   let pending = cache.get(db);
   if (pending) {
@@ -158,7 +159,7 @@ async function loadIndex(db: D1Database, now?: Date): Promise<RoleIndex> {
   return pending;
 }
 
-async function feedRoles(db: D1Database, now: Date): Promise<Job[]> {
+async function feedRoles(db: Database, now: Date): Promise<Job[]> {
   const ids = SOURCES.map(s => s.id);
   const rows = await db.prepare(`SELECT * FROM jobs j WHERE ${feedScopeSql('j', now)} AND j.source_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
   return rows.results.map(hydrate);
@@ -166,7 +167,7 @@ async function feedRoles(db: D1Database, now: Date): Promise<Job[]> {
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
 
-export async function matchResume(db: D1Database, resumeText: string, options: ResumeMatchOptions = {}): Promise<ResumeMatchResult> {
+export async function matchResume(db: Database, resumeText: string, options: ResumeMatchOptions = {}): Promise<ResumeMatchResult> {
   const text = resumeText.slice(0, MAX_RESUME_CHARS);
   const index = await loadIndex(db, options.now);
   const limit = Math.min(MAX_MATCHES, Math.max(1, Math.floor(options.limit ?? 10)));

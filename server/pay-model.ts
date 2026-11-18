@@ -8,6 +8,7 @@
 import { FEED_WINDOW_DAYS } from './policy.js';
 import { feedScopeSql } from './db.js';
 import { SOURCES } from './sources.js';
+import type { Database } from './database.js';
 
 export const PAY_MODEL_VERSION = 1;
 // Same sanity band as the market trends pay figures.
@@ -192,7 +193,7 @@ export function trainCurrency(currency: string, examples: Example[]): CurrencyMo
 
 // Reads every listed role with a sane hourly rate through the same feed scope
 // the site uses, then fits one model per currency that has enough data.
-export async function trainPayModel(db: D1Database, now = new Date()): Promise<PayModel> {
+export async function trainPayModel(db: Database, now = new Date()): Promise<PayModel> {
   const sourceIds = SOURCES.map(s => s.id);
   const mid = '(coalesce(pay_min,pay_max)+coalesce(pay_max,pay_min))/2.0';
   const rows = (await db.prepare(`SELECT id, company, title, location, country, work_mode, category,

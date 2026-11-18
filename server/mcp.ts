@@ -8,6 +8,7 @@ import { marketTrends, MAX_TREND_WEEKS } from './trends.js';
 import { estimatePay, type PayFeatures, type PayModel } from './pay-model.js';
 import { matchResume, MAX_MATCHES, MAX_RESUME_CHARS, MIN_RESUME_CHARS } from './resume-match.js';
 import type { Job } from '../src/types.js';
+import type { Database } from './database.js';
 
 export const SERVER_INFO = { name: 'contract-atlas', title: 'Contract Atlas', version: '1.0.0' };
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -81,7 +82,7 @@ export const estimatePayInput = z.object({
 
 const errorResult = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
 
-export function buildMcpServer(db: D1Database, options: AtlasMcpOptions = {}): McpServer {
+export function buildMcpServer(db: Database, options: AtlasMcpOptions = {}): McpServer {
   const server = new McpServer(SERVER_INFO, {
     instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, market_trends for posting volume, skill demand, category mix and hourly pay ranges over time, estimate_pay for a modelled hourly range when a role does not list pay, and match_resume to rank current roles against resume text.',
   });
@@ -187,7 +188,7 @@ export function buildMcpServer(db: D1Database, options: AtlasMcpOptions = {}): M
 
 // Stateless Streamable HTTP handler. A fresh server is built per request, which
 // suits a serverless function that keeps no session state between calls.
-export function createAtlasMcpHandler(db: D1Database, options: AtlasMcpOptions = {}) {
+export function createAtlasMcpHandler(db: Database, options: AtlasMcpOptions = {}) {
   return createMcpHandler(() => buildMcpServer(db, options), {
     onerror: error => console.error(JSON.stringify({ level: 'error', message: error.message, path: '/api/mcp', timestamp: new Date().toISOString() })),
   });

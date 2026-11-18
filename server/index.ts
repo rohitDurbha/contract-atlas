@@ -6,10 +6,11 @@ import { bodyLimit } from 'hono/body-limit';
 import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources, sourceHealth } from './db.js';
 import { formatRun } from './ingestion.js';
 import type { Overview } from '../src/types.js';
+import type { Database } from './database.js';
 
 // The site and the MCP endpoint are served from a read-only snapshot. Collection
 // runs in GitHub Actions, so this app exposes no write routes.
-type Bindings={DB:D1Database};
+type Bindings={DB:Database};
 const app=new Hono<{Bindings:Bindings}>();
 app.use('*',secureHeaders({referrerPolicy:'strict-origin-when-cross-origin',xFrameOptions:false}));
 app.use('/api/*',bodyLimit({maxSize:16_384}));

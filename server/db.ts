@@ -1,10 +1,11 @@
-import { drizzle } from 'drizzle-orm/d1';
+import { drizzle } from 'drizzle-orm/sqlite-proxy';
 import { and, eq, like, or, sql, desc, inArray } from 'drizzle-orm';
 import * as schema from './schema.js';
 import { SOURCES, RETIRED_SOURCE_IDS } from './sources.js';
 import seed from './seed.json' with { type: 'json' };
 import type { Job, Feed, Source } from '../src/types.js';
 import { feedCutoff, PERMANENT_TYPES } from './policy.js';
+import type { Database, Statement } from './database.js';
 
 const DDL = [
   'CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY,company TEXT NOT NULL,provider TEXT NOT NULL,url TEXT NOT NULL,country TEXT NOT NULL,status TEXT NOT NULL DEFAULT \'pending\',last_checked_at TEXT,last_success_at TEXT,message TEXT)',
@@ -22,16 +23,16 @@ const DDL = [
 const ADDED_COLUMNS:[table:string,column:string,definition:string][]=[
   ['jobs','duplicate','INTEGER NOT NULL DEFAULT 0'],
 ];
-async function addMissingColumns(db: D1Database): Promise<void> {
+async function addMissingColumns(db: Database): Promise<void> {
   for (const [table,column,definition] of ADDED_COLUMNS) {
     const found=await db.prepare(`SELECT 1 AS present FROM pragma_table_info('${table}') WHERE name=?`).bind(column).first();
     if (!found) await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
   }
 }
-const ready = new WeakMap<D1Database, Promise<void>>();
-export async function ensureDB(db: D1Database): Promise<void> {
+const ready = new WeakMap<Database, Promise<void>>();
+export async function ensureDB(db: Database): Promise<void> {
   if (!db) throw new Error('The database binding is unavailable.');
-  if ((db as D1Database & {readOnly?:boolean}).readOnly) return;
+  if ((db as Database & {readOnly?:boolean}).readOnly) return;
   let pending=ready.get(db);
   if (!pending) {
     pending=(async()=> {
@@ -57,7 +58,7 @@ export async function ensureDB(db: D1Database): Promise<void> {
   }
   await pending;
 }
-export function jobStatement(db: D1Database, job: Job): D1PreparedStatement {
+export function jobStatement(db: Database, job: Job): Statement {
   return db.prepare(`INSERT INTO jobs(id,source_id,company,title,location,country,work_mode,category,pay_min,pay_max,posted_at,first_seen_at,last_seen_at,apply_url,active,data)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,location=excluded.location,country=excluded.country,work_mode=excluded.work_mode,category=excluded.category,pay_min=excluded.pay_min,pay_max=excluded.pay_max,posted_at=COALESCE(excluded.posted_at,jobs.posted_at),last_seen_at=excluded.last_seen_at,apply_url=excluded.apply_url,active=1,data=excluded.data`)
     .bind(job.id,job.sourceId,job.company,job.title,job.location,job.country,job.workMode,job.category,job.payMin,job.payMax,job.postedAt,job.firstSeenAt,job.lastSeenAt,job.applyUrl,JSON.stringify(job));
@@ -82,7 +83,7 @@ function repostRankSql(now:Date):string {
 }
 // Stores the duplicate flag so feed requests can skip the window query.
 // Returns how many rows are flagged after the update.
-export async function markDuplicates(db: D1Database, now=new Date()): Promise<number> {
+export async function markDuplicates(db: Database, now=new Date()): Promise<number> {
   await db.prepare(`UPDATE jobs SET duplicate=CASE WHEN id IN (SELECT id FROM (${repostRankSql(now)}) WHERE rank>1) THEN 1 ELSE 0 END`).run();
   const row=await db.prepare('SELECT count(*) AS n FROM jobs WHERE duplicate=1').first<{n:number}>();
   return Number(row?.n ?? 0);
@@ -101,8 +102,18 @@ export function feedScopeSql(alias='' , now=new Date()):string {
   // column here instead of ranking the whole table.
   return `(${baseScopeSql(prefix,now)} AND ${prefix}duplicate=0)`;
 }
-export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed> {
-  const orm=drizzle(db),j=schema.jobs;
+// Drizzle builds the feed queries and hands the SQL to this callback, which
+// expects rows as arrays of column values in select order.
+function drizzleFor(db: Database) {
+  return drizzle(async(query,params,method)=> {
+    const statement=db.prepare(query).bind(...params);
+    if (method==='run') { await statement.run(); return {rows:[]}; }
+    const rows=await statement.raw();
+    return {rows:method==='get'?rows[0] as any:rows};
+  });
+}
+export async function jobFeed(db: Database, p: URLSearchParams): Promise<Feed> {
+  const orm=drizzleFor(db),j=schema.jobs;
   const active=and(sql.raw(feedScopeSql()),inArray(j.sourceId,SOURCES.map(s=>s.id)));
   const filters=[active];
   const query=p.get('q')?.trim().slice(0,150);
@@ -135,12 +146,12 @@ export async function jobFeed(db: D1Database, p: URLSearchParams): Promise<Feed>
 }
 const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 // One role from the public feed, or null when it is outside the feed policy.
-export async function getFeedJob(db: D1Database, id: string): Promise<Job | null> {
+export async function getFeedJob(db: Database, id: string): Promise<Job | null> {
   const row=await db.prepare(`SELECT * FROM jobs WHERE id=? AND ${feedScopeSql()} AND source_id NOT IN (${retiredSql})`).bind(id,...RETIRED_SOURCE_IDS).first();
   return row?hydrate(row):null;
 }
 // The source directory with live role counts, as shown on the site.
-export async function listSources(db: D1Database): Promise<Source[]> {
+export async function listSources(db: Database): Promise<Source[]> {
   const result=await db.prepare(`SELECT s.*, c.complete,c.advertised_count,c.fetched_count, (SELECT count(*) FROM jobs j WHERE j.source_id=s.id AND ${feedScopeSql('j')}) AS job_count FROM sources s LEFT JOIN source_coverage c ON c.source_id=s.id WHERE s.id NOT IN (${retiredSql}) ORDER BY s.company`).bind(...RETIRED_SOURCE_IDS).all<any>();
   return result.results.map(r=>({id:r.id,company:r.company,provider:r.provider,url:r.url,country:r.country,status:r.status,lastCheckedAt:r.last_checked_at,lastSuccessAt:r.last_success_at,jobCount:r.job_count,message:r.message,coverage:r.status==='healthy'?(r.complete===1?'complete':'partial'):'unavailable',empty:r.status==='healthy'&&Number(r.job_count)===0,advertisedCount:r.advertised_count??null,fetchedCount:r.fetched_count??null}));
 }

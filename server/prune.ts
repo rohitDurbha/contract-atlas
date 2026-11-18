@@ -1,11 +1,12 @@
 import { SOURCES } from './sources.js';
 import { retentionCutoff, PERMANENT_TYPES } from './policy.js';
+import type { Database } from './database.js';
 
 export interface PruneResult { removedJobs: number; removedRuns: number }
 
 // Keeps the committed snapshot small. Every refresh commits data/atlas.sqlite,
 // so rows that can never appear in the feed again are deleted here.
-export async function pruneSnapshot(db: D1Database, now = new Date()): Promise<PruneResult> {
+export async function pruneSnapshot(db: Database, now = new Date()): Promise<PruneResult> {
   const active = SOURCES.map(() => '?').join(',');
   const ids = SOURCES.map(s => s.id);
   const cutoff = retentionCutoff(now).toISOString();

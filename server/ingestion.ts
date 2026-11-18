@@ -2,17 +2,18 @@ import { SOURCES } from './sources.js';
 import { collectSource, type Collection } from './adapters.js';
 import { hydrate, jobStatement, markDuplicates } from './db.js';
 import type { Job, Run } from '../src/types.js';
+import type { Database } from './database.js';
 
 type RunRow = {id:string;status:Run['status'];started_at:string;completed_at:string|null;source_count:number;success_count:number;new_count:number;job_count:number;cursor:number};
 export function formatRun(row:RunRow): Run & { processed: number } {
   return {id:row.id,status:row.status,startedAt:row.started_at,completedAt:row.completed_at,sourceCount:row.source_count,successCount:row.success_count,newCount:row.new_count,jobCount:row.job_count,processed:row.cursor};
 }
-async function lease(db:D1Database,key:string,owner:string,seconds:number):Promise<boolean> {
+async function lease(db:Database,key:string,owner:string,seconds:number):Promise<boolean> {
   const now=Math.floor(Date.now()/1000);
   const row=await db.prepare('INSERT INTO leases(key,owner,expires_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at WHERE leases.expires_at<? RETURNING key').bind(key,owner,now+seconds,now).first();
   return !!row;
 }
-export async function startRun(db:D1Database):Promise<Run & {processed:number}> {
+export async function startRun(db:Database):Promise<Run & {processed:number}> {
   const running=await db.prepare("SELECT * FROM runs WHERE status='running' ORDER BY started_at DESC LIMIT 1").first<RunRow>();
   if(running && Date.now()-Date.parse(running.started_at)<1_800_000) return formatRun(running);
   const id=crypto.randomUUID(),now=new Date().toISOString();
@@ -26,7 +27,7 @@ async function boundedCollect(index:number,now:string):Promise<Collection> {
   const deadline=new Promise<Collection>(resolve=> {timer=setTimeout(()=>resolve({jobs:[],status:'error',message:'Source collection timed out; previous listings were retained.',complete:false}),SOURCES[index].id==='inspyr'?240_000:120_000);});
   try {return await Promise.race([collectSource(SOURCES[index],now),deadline]);} catch {return {jobs:[],status:'error',message:'Source collection failed; previous listings were retained.',complete:false};} finally {clearTimeout(timer!);}
 }
-export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:number}> {
+export async function stepRun(db:Database,id:string):Promise<Run & {processed:number}> {
   let row=await db.prepare('SELECT * FROM runs WHERE id=?').bind(id).first<RunRow>();
   if(!row) throw new Error('Refresh run not found.');
   if(row.status!=='running') return formatRun(row);
@@ -107,7 +108,7 @@ export async function stepRun(db:D1Database,id:string):Promise<Run & {processed:
     return formatRun((await db.prepare('SELECT * FROM runs WHERE id=?').bind(id).first<RunRow>())!);
   } finally {await db.prepare('DELETE FROM leases WHERE key=? AND owner=?').bind(`step:${id}`,owner).run();}
 }
-export async function runScheduled(db:D1Database):Promise<Run> {
+export async function runScheduled(db:Database):Promise<Run> {
   let run=await startRun(db);
   while(run.status==='running') {
     const processed=run.processed;

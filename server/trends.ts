@@ -5,6 +5,7 @@
 import { SOURCES } from './sources.js';
 import { FEED_WINDOW_DAYS } from './policy.js';
 import { feedScopeSql } from './db.js';
+import type { Database } from './database.js';
 
 const DAY_MS = 86_400_000;
 export const MAX_TREND_WEEKS = Math.floor(FEED_WINDOW_DAYS / 7) + 1;
@@ -39,7 +40,7 @@ const clamp = (value: number | undefined, low: number, high: number, fallback: n
   Number.isFinite(value) ? Math.min(high, Math.max(low, Math.floor(value!))) : fallback;
 const round = (value: unknown, digits = 2) => value == null ? null : Math.round(Number(value) * 10 ** digits) / 10 ** digits;
 
-export async function marketTrends(db: D1Database, options: TrendOptions = {}): Promise<MarketTrends> {
+export async function marketTrends(db: Database, options: TrendOptions = {}): Promise<MarketTrends> {
   const now = options.now ?? new Date();
   const weeks = clamp(options.weeks, 1, MAX_TREND_WEEKS, 12);
   const skillLimit = clamp(options.skillLimit, 1, 50, 15);
