@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Compass, ExternalLink, Globe2, LayoutGrid, List, MapPin, Menu, Radio, RefreshCw, Search, SlidersHorizontal, Sparkles, SquareArrowOutUpRight, Timer, TrendingUp, Wifi, X, Zap, BriefcaseBusiness, Activity } from 'lucide-react';
 import type { Feed, Job, Overview, Source, Run } from './types';
-import { coverageNotice, directorySummary, readableSourcesNote, sourceBadge } from './sourceLabels';
+import { ALL_PROVIDERS, coverageNotice, directorySummary, filterSources, readableSourcesNote, sourceBadge } from './sourceLabels';
 
 async function api<T>(path:string,options?:RequestInit):Promise<T> {
   const r=await fetch(path,options);
@@ -37,7 +37,7 @@ export default function App(){
   const [category,setCategory]=useState(''),[companies,setCompanies]=useState<string[]>([]),[modes,setModes]=useState<string[]>([]),[country,setCountry]=useState(''),[freshness,setFreshness]=useState(''),[onlyPay,setOnlyPay]=useState(false);
   const [sort,setSort]=useState('newest'),[page,setPage]=useState(1),[layout,setLayout]=useState<'grid'|'list'>('grid');
   const [selected,setSelected]=useState<Job|null>(null),[menu,setMenu]=useState(false),[filterOpen,setFilterOpen]=useState(false),[info,setInfo]=useState(false);
-  const [refreshing,setRefreshing]=useState(false),[notice,setNotice]=useState(''),[sourceQuery,setSourceQuery]=useState(''),[provider,setProvider]=useState('All providers');
+  const [refreshing,setRefreshing]=useState(false),[notice,setNotice]=useState(''),[sourceQuery,setSourceQuery]=useState(''),[provider,setProvider]=useState(ALL_PROVIDERS),[showEmpty,setShowEmpty]=useState(true);
   const overview=useQuery({queryKey:['overview'],queryFn:()=>api<Overview>('/api/overview'),refetchInterval:60_000});
   const sources=useQuery({queryKey:['sources'],queryFn:()=>api<Source[]>('/api/sources'),refetchInterval:60_000});
   const params=new URLSearchParams({page:String(page),sort});
@@ -53,6 +53,7 @@ export default function App(){
   const allSources=sources.data || [];
   const coverageText=coverageNotice(stats);
   const summary=directorySummary(allSources);
+  const shownSources=filterSources(allSources,{query:sourceQuery,provider,showEmpty});
   const lastChecked=allSources.map(s=>s.lastCheckedAt).filter((x):x is string=>!!x).sort().at(-1)||null;
   const activeFilters=companies.length+modes.length+Number(!!category)+Number(!!country)+Number(!!freshness)+Number(onlyPay)+Number(!!search)+Number(!!searchLocation);
   const clear=()=>{setCompanies([]);setModes([]);setCategory('');setCountry('');setFreshness('');setOnlyPay(false);setSearch('');setQ('');setSearchLocation('');setLocation('');};
@@ -114,9 +115,9 @@ export default function App(){
         {pageView==='sources'&&<>
           <PageHeading eyebrow="A WORLD OF OPPORTUNITY" title="Good work starts at the source." text="Company talent communities, together at last. See what’s connected and jump straight to any original portal."/>
           <div className="source-summary"><div><strong>{summary.total}</strong><span>Company communities</span></div><div><strong>{summary.complete}</strong><span>Complete feeds</span></div><div><strong>{summary.empty}</strong><span>No open roles</span></div><div><strong>{summary.providers}</strong><span>Provider families</span></div><div><strong>{summary.restricted}</strong><span>Access restricted</span></div></div>
-          <div className="directory-toolbar"><label><Search size={18}/><input placeholder="Find a company or provider" aria-label="Find a source" value={sourceQuery} onChange={e=>setSourceQuery(e.target.value)}/></label><select value={provider} onChange={e=>setProvider(e.target.value)} aria-label="Filter source provider"><option>All providers</option>{[...new Set(allSources.map(s=>s.provider))].sort().map(p=><option key={p}>{p}</option>)}</select></div>
-          <div className="source-grid">{allSources.filter(s=>(provider==='All providers'||s.provider===provider)&&`${s.company} ${s.provider}`.toLowerCase().includes(sourceQuery.toLowerCase())).map(s=><div className="source-card" key={s.id}><div className="source-card-top"><CompanyMark id={s.id} company={s.company}/><span className={`status-badge ${sourceBadge(s).className}`}><span/>{sourceBadge(s).label}</span></div><h2>{s.company}</h2><span className="provider-label">{s.provider} <span>·</span> {s.country}</span><p>{s.message || 'This portal is registered and awaiting its first collection.'}{s.advertisedCount!==null&&<span className="source-count-check">{s.fetchedCount ?? 0} collected / {s.advertisedCount} advertised by the feed</span>}</p><div className="source-card-footer"><div><strong>{s.jobCount}</strong> roles <span>·</span> {ago(s.lastCheckedAt)}</div><a href={s.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${s.company} source`}><ArrowUpRight size={19}/></a></div></div>)}</div>
-          {!sources.isPending&&!allSources.filter(s=>(provider==='All providers'||s.provider===provider)&&`${s.company} ${s.provider}`.toLowerCase().includes(sourceQuery.toLowerCase())).length&&<Empty icon={<Search size={30}/>} title="No communities found." text="Try another company name or provider." action="Clear source search" onAction={()=>{setSourceQuery('');setProvider('All providers');}}/>}
+          <div className="directory-toolbar"><label><Search size={18}/><input placeholder="Find a company or provider" aria-label="Find a source" value={sourceQuery} onChange={e=>setSourceQuery(e.target.value)}/></label><select value={provider} onChange={e=>setProvider(e.target.value)} aria-label="Filter source provider"><option>{ALL_PROVIDERS}</option>{[...new Set(allSources.map(s=>s.provider))].sort().map(p=><option key={p}>{p}</option>)}</select>{summary.empty>0&&<button type="button" className={showEmpty?'empty-toggle':'empty-toggle active'} aria-pressed={!showEmpty} onClick={()=>setShowEmpty(!showEmpty)}>{showEmpty?`Hide ${summary.empty} with no open roles`:`Show ${summary.empty} with no open roles`}</button>}</div>
+          <div className="source-grid">{shownSources.map(s=><div className="source-card" key={s.id}><div className="source-card-top"><CompanyMark id={s.id} company={s.company}/><span className={`status-badge ${sourceBadge(s).className}`}><span/>{sourceBadge(s).label}</span></div><h2>{s.company}</h2><span className="provider-label">{s.provider} <span>·</span> {s.country}</span><p>{s.message || 'This portal is registered and awaiting its first collection.'}{s.advertisedCount!==null&&<span className="source-count-check">{s.fetchedCount ?? 0} collected / {s.advertisedCount} advertised by the feed</span>}</p><div className="source-card-footer"><div><strong>{s.jobCount}</strong> roles <span>·</span> {ago(s.lastCheckedAt)}</div><a href={s.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${s.company} source`}><ArrowUpRight size={19}/></a></div></div>)}</div>
+          {!sources.isPending&&!shownSources.length&&<Empty icon={<Search size={30}/>} title="No communities found." text={showEmpty?'Try another company name or provider.':'Try another company name or provider, or show sources with no open roles.'} action="Clear source filters" onAction={()=>{setSourceQuery('');setProvider(ALL_PROVIDERS);setShowEmpty(true);}}/>}
         </>}
         {pageView==='activity'&&<>
           <PageHeading eyebrow="YOUR ALWAYS-ON JOB RADAR" title="Fresh roles. Clear signals." text="Follow each collection run and see exactly when your sources were checked."/>

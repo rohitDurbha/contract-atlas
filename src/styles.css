@@ -25,3 +25,7 @@ dialog{border:none;padding:0;color:var(--deep);background:#fff}dialog::backdrop{
 .job-description li{padding-left:.2em;margin:.45em 0}
 .job-card-bottom div>span{color:#465343;font-weight:550}
 .job-card-bottom .new-label{color:#245433;background:#e3efd9;font-weight:800}
+.directory-toolbar select:has(+ .empty-toggle){margin-left:auto}
+.directory-toolbar .empty-toggle{border:1px solid #dfe6d4;background:white;font-size:10px;color:#72875c;border-radius:6px;padding:8px 13px;white-space:nowrap;cursor:pointer}
+.directory-toolbar .empty-toggle.active{background:#f3f0f6;border-color:#ddd5e8;color:#8f84a3}
+@media(max-width:760px){.directory-toolbar{flex-wrap:wrap}.directory-toolbar label{flex-basis:100%}.directory-toolbar .empty-toggle{font-size:9px;padding:8px}}
