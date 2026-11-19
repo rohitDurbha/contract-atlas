@@ -55,6 +55,15 @@ jobs:
       - name: Check code before collection
         run: npm run typecheck && npm test
       - name: Refresh persisted snapshot
+        env:
+          # Optional. With neither key the refresh skips LLM enrichment, and a
+          # failing provider never fails this step.
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ENRICH_GROQ_MODEL: ${{ vars.ENRICH_GROQ_MODEL }}
+          ENRICH_GEMINI_MODEL: ${{ vars.ENRICH_GEMINI_MODEL }}
+          ENRICH_MAX_PER_RUN: ${{ vars.ENRICH_MAX_PER_RUN }}
+          ENRICH_DELAY_MS: ${{ vars.ENRICH_DELAY_MS }}
         run: npm run collect:free
       - name: Check the snapshot
         run: npm run verify:free
