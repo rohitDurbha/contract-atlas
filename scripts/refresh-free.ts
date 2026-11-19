@@ -4,6 +4,7 @@ import { runScheduled } from '../server/ingestion';
 import { pruneSnapshot } from '../server/prune';
 import { writeFile } from 'node:fs/promises';
 import { trainPayModel } from '../server/pay-model';
+import { enrichPending, providersFromEnv, runOptionsFromEnv } from '../server/enrichment';
 const {db,close}=openSQLite('data/atlas.sqlite');
 try {
   await ensureDB(db);
@@ -14,11 +15,16 @@ try {
   // Pruning can remove a role that kept a repost hidden, so flags are
   // recomputed on the rows that actually ship.
   const duplicates=await markDuplicates(db);
+  // Enrichment runs on the roles that ship, after pruning and flags, so no
+  // calls are spent on rows that are about to be deleted or hidden. It never
+  // throws, and without GROQ_API_KEY or GEMINI_API_KEY it does nothing.
+  const enrichment=await enrichPending(db,providersFromEnv(),runOptionsFromEnv());
+  if(enrichment.status==='error'||enrichment.status==='stopped')console.warn(`Enrichment ${enrichment.status}; the refresh continues.`,enrichment.error??'');
   await db.exec('VACUUM');
   // The pay model is refitted on every refresh so estimates follow the
   // current snapshot. Only its coefficients ship with the site.
   const payModel=await trainPayModel(db);
   await writeFile('data/pay-model.json',JSON.stringify(payModel)+'\n');
   const payRoles=Object.fromEntries(Object.entries(payModel.currencies).map(([currency,m])=>[currency,m.roles]));
-  console.log(JSON.stringify({...run,pruned,duplicates,payRoles}));
+  console.log(JSON.stringify({...run,pruned,duplicates,payRoles,enrichment}));
 }finally{close();}

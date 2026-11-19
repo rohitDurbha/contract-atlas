@@ -1,6 +1,7 @@
 import { SOURCES } from './sources.js';
 import { retentionCutoff, PERMANENT_TYPES } from './policy.js';
 import { pruneEmbeddings } from './embeddings.js';
+import { pruneEnrichment } from './enrichment.js';
 import type { Database } from './database.js';
 
 export interface PruneResult { removedJobs: number; removedRuns: number }
@@ -22,8 +23,10 @@ export async function pruneSnapshot(db: Database, now = new Date()): Promise<Pru
     db.prepare('DELETE FROM runs WHERE id NOT IN (SELECT id FROM runs ORDER BY started_at DESC LIMIT 50) RETURNING id'),
   ]);
   await db.prepare(`DELETE FROM source_coverage WHERE source_id NOT IN (${active})`).bind(...ids).run();
-  // Vectors live in their own table, so they are dropped with their role here.
+  // Vectors and enrichment answers live in their own tables, so they are
+  // dropped with their role here.
   await pruneEmbeddings(db);
+  await pruneEnrichment(db);
   const count = (r: any) => (r?.results ?? []).length;
   return { removedJobs: count(orphans) + count(expired) + count(stale) + count(perm), removedRuns: count(runs) };
 }

@@ -7,6 +7,8 @@
 // module does nothing, and a failing provider never stops a refresh.
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { feedScopeSql, hydrate } from './db.js';
+import { SOURCES } from './sources.js';
 import type { Database } from './database.js';
 import type { Job } from '../src/types.js';
 
@@ -220,4 +222,103 @@ export async function loadEnrichment(db: Database, jobId: string): Promise<(Enri
     skills: JSON.parse(r.skills), seniority: r.seniority, normalizedTitle: r.normalized_title, remote: r.remote,
     hourlyPayMin: r.pay_min, hourlyPayMax: r.pay_max, inputHash: r.input_hash, provider: r.provider, model: r.model, enrichedAt: r.enriched_at,
   };
+}
+
+export interface PendingEnrichment { jobId: string; input: string; hash: string }
+
+// Feed roles with no stored answer, or whose prompt text changed since they
+// were enriched. Newest postings come first, so a capped run spends its calls
+// on the roles visitors see at the top of the feed.
+export async function pendingEnrichment(db: Database, now = new Date()): Promise<PendingEnrichment[]> {
+  const stored = new Map((await db.prepare('SELECT job_id,input_hash FROM job_enrichment').all<{ job_id: string; input_hash: string }>()).results.map(r => [r.job_id, r.input_hash]));
+  const ids = SOURCES.map(s => s.id);
+  const rows = await db.prepare(`SELECT * FROM jobs WHERE ${feedScopeSql('', now)} AND source_id IN (${ids.map(() => '?').join(',')})
+    ORDER BY posted_at DESC, id`).bind(...ids).all<any>();
+  const out: PendingEnrichment[] = [];
+  for (const row of rows.results) {
+    const input = enrichmentInput(hydrate(row));
+    const hash = inputHash(input);
+    if (stored.get(row.id) !== hash) out.push({ jobId: row.id, input, hash });
+  }
+  return out;
+}
+
+// Deletes answers whose role is no longer in the snapshot.
+export async function pruneEnrichment(db: Database): Promise<number> {
+  const { changes } = await db.prepare('DELETE FROM job_enrichment WHERE job_id NOT IN (SELECT id FROM jobs)').run();
+  return changes;
+}
+
+// Free tier limits. Groq allows about 30 requests a minute on the default
+// model and Gemini Flash Lite about 15, so one call every four seconds stays
+// under both. Forty roles a run at twelve runs a day is under 500 calls, well
+// inside either daily quota, and a backlog drains over a few refreshes.
+export const ENRICH_DEFAULT_LIMIT = 40;
+export const ENRICH_DEFAULT_DELAY_MS = 4000;
+// After this many failures in a row the provider is treated as down for the
+// rest of the run instead of burning the whole delay budget.
+const MAX_CONSECUTIVE_FAILURES = 3;
+
+export interface EnrichRunOptions {
+  limit?: number;
+  delayMs?: number;
+  fetch?: Fetch;
+  sleep?: (ms: number) => Promise<void>;
+  now?: Date;
+}
+
+export interface EnrichRunResult {
+  status: 'skipped' | 'done' | 'stopped' | 'error';
+  pending: number;
+  attempted: number;
+  enriched: number;
+  failed: number;
+  providers: string[];
+  error?: string;
+}
+
+function wholeNumber(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  return value != null && value.trim() !== '' && Number.isInteger(n) && n >= 0 ? n : fallback;
+}
+
+// Run options from the environment, so the cap and delay can be tuned in
+// the workflow without a code change.
+export function runOptionsFromEnv(env: Record<string, string | undefined> = process.env): Pick<EnrichRunOptions, 'limit' | 'delayMs'> {
+  return { limit: wholeNumber(env.ENRICH_MAX_PER_RUN, ENRICH_DEFAULT_LIMIT), delayMs: wholeNumber(env.ENRICH_DELAY_MS, ENRICH_DEFAULT_DELAY_MS) };
+}
+
+// Enriches up to `limit` pending roles, waiting `delayMs` between calls.
+// It never throws. A missing key skips the run, a provider that keeps failing
+// stops it early, and any other error is reported in the result, so the
+// refresh always goes on to publish the snapshot.
+export async function enrichPending(db: Database, providers: EnrichmentProvider[], options: EnrichRunOptions = {}): Promise<EnrichRunResult> {
+  const result: EnrichRunResult = { status: 'skipped', pending: 0, attempted: 0, enriched: 0, failed: 0, providers: providers.map(p => `${p.name}:${p.model}`) };
+  if (!providers.length) return result;
+  const limit = options.limit ?? ENRICH_DEFAULT_LIMIT;
+  const delayMs = options.delayMs ?? ENRICH_DEFAULT_DELAY_MS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  try {
+    const pending = await pendingEnrichment(db, options.now);
+    result.pending = pending.length;
+    result.status = 'done';
+    let failuresInRow = 0;
+    for (const role of pending.slice(0, limit)) {
+      if (result.attempted > 0 && delayMs > 0) await sleep(delayMs);
+      result.attempted++;
+      const answer = await requestEnrichment(providers, role.input, { fetch: options.fetch });
+      if (answer) {
+        await saveEnrichment(db, role.jobId, role.hash, answer, options.now);
+        result.enriched++;
+        failuresInRow = 0;
+      } else {
+        result.failed++;
+        if (++failuresInRow >= MAX_CONSECUTIVE_FAILURES) { result.status = 'stopped'; break; }
+      }
+    }
+  } catch (error) {
+    result.status = 'error';
+    result.error = error instanceof Error ? error.message : String(error);
+  }
+  return result;
 }
