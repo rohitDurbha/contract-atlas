@@ -24,6 +24,10 @@ const DDL = [
   // table keeps them safe from the job upsert, and input_hash tells the
   // refresh which roles changed since they were last enriched.
   'CREATE TABLE IF NOT EXISTS job_enrichment (job_id TEXT PRIMARY KEY,input_hash TEXT NOT NULL,provider TEXT NOT NULL,model TEXT NOT NULL,skills TEXT NOT NULL,seniority TEXT NOT NULL,normalized_title TEXT NOT NULL,remote TEXT NOT NULL,pay_min REAL,pay_max REAL,enriched_at TEXT NOT NULL)',
+  // Embedding vectors for semantic search, stored as little-endian float32
+  // blobs. input_hash covers the embedded text and the model, so the refresh
+  // only embeds roles that are new or changed.
+  'CREATE TABLE IF NOT EXISTS job_embeddings (job_id TEXT PRIMARY KEY,input_hash TEXT NOT NULL,model TEXT NOT NULL,dimensions INTEGER NOT NULL,vector BLOB NOT NULL,embedded_at TEXT NOT NULL)',
 ];
 // Snapshots built before a column existed are upgraded in place, since
 // CREATE TABLE IF NOT EXISTS leaves an existing table untouched.
