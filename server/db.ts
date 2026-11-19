@@ -20,6 +20,10 @@ const DDL = [
   'CREATE TABLE IF NOT EXISTS leases (key TEXT PRIMARY KEY,owner TEXT NOT NULL,expires_at INTEGER NOT NULL)',
   'CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS source_coverage (source_id TEXT PRIMARY KEY,complete INTEGER NOT NULL DEFAULT 0,advertised_count INTEGER,fetched_count INTEGER NOT NULL DEFAULT 0,checked_at TEXT NOT NULL)',
+  // Fields an LLM extracted from each role at collection time. A separate
+  // table keeps them safe from the job upsert, and input_hash tells the
+  // refresh which roles changed since they were last enriched.
+  'CREATE TABLE IF NOT EXISTS job_enrichment (job_id TEXT PRIMARY KEY,input_hash TEXT NOT NULL,provider TEXT NOT NULL,model TEXT NOT NULL,skills TEXT NOT NULL,seniority TEXT NOT NULL,normalized_title TEXT NOT NULL,remote TEXT NOT NULL,pay_min REAL,pay_max REAL,enriched_at TEXT NOT NULL)',
 ];
 // Snapshots built before a column existed are upgraded in place, since
 // CREATE TABLE IF NOT EXISTS leaves an existing table untouched.
