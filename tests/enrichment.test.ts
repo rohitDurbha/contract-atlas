@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { openSQLite } from '../server/sqlite';
-import { ensureDB } from '../server/db';
+import { ensureDB, jobStatement } from '../server/db';
+import { makeJob } from '../server/normalize';
+import { pruneSnapshot } from '../server/prune';
+import { SOURCES } from '../server/sources';
 import {
-  ENRICHMENT_MODELS, enrichmentInput, inputHash, loadEnrichment, parseEnrichment, providersFromEnv, requestEnrichment, saveEnrichment,
+  ENRICH_DEFAULT_DELAY_MS, ENRICH_DEFAULT_LIMIT, ENRICHMENT_MODELS, enrichPending, enrichmentInput, inputHash, loadEnrichment, parseEnrichment,
+  pendingEnrichment, providersFromEnv, requestEnrichment, runOptionsFromEnv, saveEnrichment,
 } from '../server/enrichment';
 
 const role = {
@@ -131,4 +135,96 @@ describe('storing enrichment', () => {
       close();
     }
   });
+});
+
+describe('enriching pending roles during a refresh', () => {
+  const now = new Date('2026-11-19T12:00:00.000Z');
+  const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
+  const id = (key: string) => `${SOURCES[0].id}:${key}`;
+  const groq = { name: 'groq' as const, model: 'm1', apiKey: 'q' };
+  const answer = () => reply(200, { choices: [{ message: { content: JSON.stringify(good) } }] });
+  const noSleep = async () => {};
+
+  async function withRoles(test: (db: ReturnType<typeof openSQLite>['db'], add: (key: string, title: string, posted: number, description?: string) => Promise<unknown>) => Promise<void>) {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      await db.prepare('DELETE FROM jobs').run();
+      const add = (key: string, title: string, posted: number, description = 'Build services in Python.') =>
+        jobStatement(db, makeJob(SOURCES[0], { sourceJobId: key, title, applyUrl: 'https://example.com/jobs/' + key, postedAt: daysAgo(posted), description }, now.toISOString())!).run();
+      await test(db, add);
+    } finally {
+      close();
+    }
+  }
+
+  it('reads the cap and delay from the environment with safe defaults', () => {
+    expect(runOptionsFromEnv({})).toEqual({ limit: ENRICH_DEFAULT_LIMIT, delayMs: ENRICH_DEFAULT_DELAY_MS });
+    expect(runOptionsFromEnv({ ENRICH_MAX_PER_RUN: '5', ENRICH_DELAY_MS: '0' })).toEqual({ limit: 5, delayMs: 0 });
+    expect(runOptionsFromEnv({ ENRICH_MAX_PER_RUN: 'lots', ENRICH_DELAY_MS: '-1' })).toEqual({ limit: ENRICH_DEFAULT_LIMIT, delayMs: ENRICH_DEFAULT_DELAY_MS });
+  });
+
+  it('lists feed roles newest first and skips roles outside the feed', () => withRoles(async (db, add) => {
+    await add('a', 'Data Engineer', 3);
+    await add('b', 'Software Engineer', 1);
+    await add('old', 'Data Engineer', 200);
+    await add('clerk', 'Office Assistant', 1);
+    expect((await pendingEnrichment(db, now)).map(p => p.jobId)).toEqual([id('b'), id('a')]);
+  }));
+
+  it('skips the run and makes no calls without a provider', () => withRoles(async (db, add) => {
+    await add('a', 'Data Engineer', 1);
+    let calls = 0;
+    const fetch = (async () => { calls++; return answer(); }) as unknown as typeof globalThis.fetch;
+    expect(await enrichPending(db, [], { fetch, now })).toMatchObject({ status: 'skipped', attempted: 0 });
+    expect(calls).toBe(0);
+  }));
+
+  it('respects the cap, waits between calls and picks up only new or changed roles next time', () => withRoles(async (db, add) => {
+    await add('a', 'Data Engineer', 3);
+    await add('b', 'Software Engineer', 2);
+    await add('c', 'Machine Learning Engineer', 1);
+    const waits: number[] = [];
+    const sleep = async (ms: number) => { waits.push(ms); };
+    const fetch = (async () => answer()) as unknown as typeof globalThis.fetch;
+
+    const first = await enrichPending(db, [groq], { fetch, sleep, limit: 2, delayMs: 50, now });
+    expect(first).toMatchObject({ status: 'done', pending: 3, attempted: 2, enriched: 2, failed: 0, providers: ['groq:m1'] });
+    expect(waits).toEqual([50]);
+    expect(await loadEnrichment(db, id('c'))).toMatchObject({ seniority: 'senior', provider: 'groq', model: 'm1' });
+    expect(await loadEnrichment(db, id('a'))).toBeNull();
+
+    expect(await enrichPending(db, [groq], { fetch, sleep: noSleep, now })).toMatchObject({ pending: 1, enriched: 1 });
+    expect(await pendingEnrichment(db, now)).toEqual([]);
+
+    await add('b', 'Software Engineer', 2, 'Build services in Go and Kubernetes.');
+    expect((await pendingEnrichment(db, now)).map(p => p.jobId)).toEqual([id('b')]);
+  }));
+
+  it('stops early when the provider keeps failing and never throws', () => withRoles(async (db, add) => {
+    for (const key of ['a', 'b', 'c', 'd', 'e']) await add(key, 'Data Engineer ' + key, 1);
+    let calls = 0;
+    const down = (async () => { calls++; return reply(503, { error: 'down' }); }) as unknown as typeof globalThis.fetch;
+    expect(await enrichPending(db, [groq], { fetch: down, sleep: noSleep, now })).toMatchObject({ status: 'stopped', attempted: 3, failed: 3, enriched: 0 });
+    expect(calls).toBe(3);
+
+    // One bad answer between good ones does not stop the run.
+    let n = 0;
+    const flaky = (async () => (++n === 2 ? reply(200, { choices: [{ message: { content: 'nope' } }] }) : answer())) as unknown as typeof globalThis.fetch;
+    expect(await enrichPending(db, [groq], { fetch: flaky, sleep: noSleep, now })).toMatchObject({ status: 'done', attempted: 5, enriched: 4, failed: 1 });
+
+    await db.exec('DROP TABLE job_enrichment');
+    expect(await enrichPending(db, [groq], { fetch: flaky, sleep: noSleep, now })).toMatchObject({ status: 'error', attempted: 0 });
+  }));
+
+  it('drops answers for roles that pruning removes', () => withRoles(async (db, add) => {
+    await add('a', 'Data Engineer', 1);
+    await add('old', 'Data Engineer', 200);
+    const enrichment = parseEnrichment(JSON.stringify(good))!;
+    await saveEnrichment(db, id('a'), 'h', { enrichment, provider: groq });
+    await saveEnrichment(db, id('old'), 'h', { enrichment, provider: groq });
+    await pruneSnapshot(db, now);
+    expect(await loadEnrichment(db, id('a'))).not.toBeNull();
+    expect(await loadEnrichment(db, id('old'))).toBeNull();
+  }));
 });
