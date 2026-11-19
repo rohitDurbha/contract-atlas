@@ -35,6 +35,10 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
   - [ ] c. Read the stored enrichment in the feed, the API and the MCP tools, preferring it over the regex skills and work mode when present, and show seniority and the normalized title on the site.
   - [ ] d. Make `verify:free` check that stored enrichment is well formed, and describe the enrichment, its limits and the secret in the README.
 - [ ] 7. Semantic search using small local embeddings (bge-small or MiniLM through fastembed) stored in SQLite with sqlite-vec, so people can describe the role they want in plain words.
+  - [ ] a. Add a `job_embeddings` table (with a migration for older snapshots) and a `server/embeddings.ts` module that builds the text each role is embedded from, hashes it so unchanged roles are skipped, stores vectors as little-endian float32 blobs (the format sqlite-vec reads) and ranks feed roles by cosine similarity to a query vector. The model sits behind a small embedder interface, so tests use a fake one and need no download.
+  - [ ] b. Embed new or changed active roles in the refresh workflow with `bge-small-en-v1.5` through fastembed, cache the model between Actions runs, and keep the refresh green when the model cannot load.
+  - [ ] c. Embed the visitor's query at request time on the Vercel function with the same model, add a `semantic` option to the jobs API and a `semantic_search` MCP tool, and fall back to keyword search when vectors or the model are missing. Load sqlite-vec for the distance query if the brute-force scan becomes slow.
+  - [ ] d. Add a "Describe the role" search mode on the site, make `verify:free` check that stored vectors match the model's size, and document the feature in the README.
 - [ ] 8. Resume match that runs fully in the browser with transformers.js. The visitor drops a resume, it never leaves the device, and roles are ranked by similarity.
 - [ ] 9. A trends page with Plotly or Recharts charts for skill demand, pay ranges and posting volume over time, plus a weekly LLM-written market summary.
 - [ ] 10. Tests for the dispatcher worker, a CI workflow for pull requests, and README screenshots.
