@@ -12,7 +12,7 @@
 // rewriting the stored data. With under a thousand roles in the feed a scan
 // in JavaScript takes a few milliseconds and needs no native extension.
 import { createHash } from 'node:crypto';
-import { feedScopeSql, hydrate } from './db.js';
+import { applyEnrichment, enrichmentRows, feedScopeSql, hydrate } from './db.js';
 import { SOURCES } from './sources.js';
 import type { Database } from './database.js';
 import type { Job } from '../src/types.js';
@@ -156,10 +156,11 @@ export async function semanticSearch(db: Database, query: ArrayLike<number>, opt
   const limit = Math.min(MAX_SEMANTIC_RESULTS, Math.max(1, Math.floor(options.limit ?? 10)));
   const unit = normalize(query);
   const rows = await feedRows(db, options.now ?? new Date(), { model });
+  const stored = await enrichmentRows(db);
   let missing = 0;
   const scored: SemanticMatch[] = [];
   for (const row of rows) {
-    const job = hydrate(row);
+    const job = applyEnrichment(hydrate(row), stored.get(row.id));
     if (options.category && job.category !== options.category) continue;
     if (options.workMode && job.workMode !== options.workMode) continue;
     // A vector of another size came from a different model build and cannot be compared.

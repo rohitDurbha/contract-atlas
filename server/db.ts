@@ -84,6 +84,59 @@ export function hydrate(row: { data: string; first_seen_at?: string; last_seen_a
   const j=JSON.parse(row.data) as Job;
   return {...j,firstSeenAt:row.firstSeenAt || row.first_seen_at || j.firstSeenAt,lastSeenAt:row.lastSeenAt || row.last_seen_at || j.lastSeenAt,postedAt:row.postedAt || row.posted_at || j.postedAt,active:(row.active ?? 1)===1};
 }
+// Stored LLM answers take precedence over the listing's regex skills and work
+// mode. The raw listing in jobs.data is left alone, so enrichment hashes and
+// embedding text still come from what the source published.
+const ENRICHED_MODES:Record<string,Job['workMode']>={remote:'Remote',hybrid:'Hybrid',onsite:'On-site'};
+const SENIORITY_LABELS=new Set(['intern','junior','mid','senior','lead','principal']);
+export interface EnrichmentRow { job_id:string; skills:string; seniority:string; normalized_title:string; remote:string }
+export function applyEnrichment(job: Job, row: EnrichmentRow | undefined): Job {
+  if (!row) return job;
+  const out:Job={...job};
+  let skills:unknown=[];
+  try { skills=JSON.parse(row.skills); } catch { /* a malformed list keeps the listed skills */ }
+  const clean=Array.isArray(skills)?skills.filter((s):s is string=>typeof s==='string'&&s.trim()!==''):[];
+  if (clean.length) { out.skills=clean; out.enriched=true; }
+  const mode=ENRICHED_MODES[row.remote];
+  if (mode) { out.workMode=mode; out.enriched=true; }
+  if (SENIORITY_LABELS.has(row.seniority)) out.seniority=row.seniority as Job['seniority'];
+  const title=row.normalized_title?.trim();
+  if (title) out.normalizedTitle=title;
+  return out;
+}
+// Older snapshots have no job_enrichment table. A missing table is checked
+// again on the next call, since a writable database gains it in ensureDB.
+const enrichmentTables=new WeakSet<Database>();
+export async function hasEnrichment(db: Database): Promise<boolean> {
+  if (enrichmentTables.has(db)) return true;
+  const found=await db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='job_enrichment'").first();
+  if (found) enrichmentTables.add(db);
+  return !!found;
+}
+// Stored answers keyed by role id, for the given roles or for every role.
+export async function enrichmentRows(db: Database, ids?: string[]): Promise<Map<string,EnrichmentRow>> {
+  const out=new Map<string,EnrichmentRow>();
+  if ((ids && !ids.length) || !(await hasEnrichment(db))) return out;
+  const columns='SELECT job_id,skills,seniority,normalized_title,remote FROM job_enrichment';
+  const chunks=ids?Array.from({length:Math.ceil(ids.length/200)},(_,i)=>ids.slice(i*200,i*200+200)):[null];
+  for (const chunk of chunks) {
+    const statement=chunk?db.prepare(`${columns} WHERE job_id IN (${chunk.map(()=>'?').join(',')})`).bind(...chunk):db.prepare(columns);
+    for (const row of (await statement.all<EnrichmentRow>()).results) out.set(row.job_id,row);
+  }
+  return out;
+}
+export async function withEnrichment(db: Database, jobs: Job[]): Promise<Job[]> {
+  const rows=await enrichmentRows(db,jobs.map(j=>j.id));
+  return jobs.map(j=>applyEnrichment(j,rows.get(j.id)));
+}
+// The work mode a visitor sees, as SQL, so filters and counts agree with the
+// cards. prefix names the jobs table or its alias, such as 'jobs.' or 'j.'.
+export async function workModeSql(db: Database, prefix='jobs.'): Promise<string> {
+  if(prefix && !/^[a-z_]+\.$/.test(prefix))throw new Error('Invalid SQL prefix');
+  if (!(await hasEnrichment(db))) return `${prefix}work_mode`;
+  const cases=Object.entries(ENRICHED_MODES).map(([k,v])=>`WHEN '${k}' THEN '${v}'`).join(' ');
+  return `COALESCE((SELECT CASE e.remote ${cases} END FROM job_enrichment e WHERE e.job_id=${prefix}id),${prefix}work_mode)`;
+}
 // One policy shared by listings, facets, detail URLs, and dashboard counts.
 function baseScopeSql(prefix:string,now:Date):string {
   const title=`(' ' || lower(replace(replace(replace(replace(${prefix}title,'-',' '),'/',' '),'(',' '),')',' ')) || ' ')`;
@@ -145,9 +198,11 @@ export async function jobFeed(db: Database, p: URLSearchParams): Promise<Feed> {
   const query=p.get('q')?.trim().slice(0,150);
   if (query) { const term=`%${query.replace(/[\\%_]/g,'\\$&')}%`; filters.push(sql`(${j.title} LIKE ${term} ESCAPE '\\' OR ${j.company} LIKE ${term} ESCAPE '\\' OR ${j.location} LIKE ${term} ESCAPE '\\' OR ${j.data} LIKE ${term} ESCAPE '\\')`); }
   if (p.get('location')) filters.push(like(j.location,`%${p.get('location')!.slice(0,100)}%`));
-  for (const [key,column] of [['company',j.company],['category',j.category],['mode',j.workMode],['country',j.country]] as const) {
+  for (const [key,column] of [['company',j.company],['category',j.category],['country',j.country]] as const) {
     const values=p.getAll(key).filter(Boolean); if(values.length) filters.push(inArray(column,values.slice(0,60)));
   }
+  const modes=p.getAll('mode').filter(Boolean);
+  if (modes.length) filters.push(inArray(sql.raw(await workModeSql(db)),modes.slice(0,60)));
   const freshness=p.get('freshness');
   if (['24h','7d','30d'].includes(freshness || '')) {
     const hours=freshness==='24h'?24:freshness==='7d'?168:720;
@@ -168,13 +223,15 @@ export async function jobFeed(db: Database, p: URLSearchParams): Promise<Feed> {
     orm.select({name:j.category,count:sql<number>`count(*)`}).from(j).where(active).groupBy(j.category).orderBy(j.category),
     orm.select({country:j.country}).from(j).where(active).groupBy(j.country).orderBy(j.country),
   ]);
-  return {jobs:rows.map(hydrate),total,page,pages,facets:{companies,categories,countries:countries.map(r=>r.country)}};
+  return {jobs:await withEnrichment(db,rows.map(hydrate)),total,page,pages,facets:{companies,categories,countries:countries.map(r=>r.country)}};
 }
 const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 // One role from the public feed, or null when it is outside the feed policy.
 export async function getFeedJob(db: Database, id: string): Promise<Job | null> {
   const row=await db.prepare(`SELECT * FROM jobs WHERE id=? AND ${feedScopeSql()} AND source_id NOT IN (${retiredSql})`).bind(id,...RETIRED_SOURCE_IDS).first();
-  return row?hydrate(row):null;
+  if (!row) return null;
+  const [job]=await withEnrichment(db,[hydrate(row)]);
+  return job;
 }
 // The source directory with live role counts, as shown on the site.
 export async function listSources(db: Database): Promise<Source[]> {

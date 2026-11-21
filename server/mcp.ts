@@ -52,7 +52,10 @@ function pay(job: Job): string | null {
 function summary(job: Job) {
   const text = job.description.replace(/\s+/g, ' ').trim();
   return {
-    id: job.id, title: job.title, company: job.company, location: job.location, workMode: job.workMode,
+    id: job.id, title: job.title,
+    ...(job.normalizedTitle ? { normalizedTitle: job.normalizedTitle } : {}),
+    ...(job.seniority ? { seniority: job.seniority } : {}),
+    company: job.company, location: job.location, workMode: job.workMode,
     category: job.category, pay: pay(job), duration: job.duration, postedAt: job.postedAt,
     skills: job.skills.slice(0, 12), applyUrl: job.applyUrl,
     snippet: text.length > SUMMARY_CHARS ? text.slice(0, SUMMARY_CHARS).trimEnd() + '...' : text,

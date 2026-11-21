@@ -22,6 +22,12 @@ export interface Job {
   applyUrl: string;
   provider: string;
   active: boolean;
+  /** Seniority an LLM read from the posting at collection time, when known. */
+  seniority?: 'intern' | 'junior' | 'mid' | 'senior' | 'lead' | 'principal';
+  /** Plain job title without company names, locations or contract terms, when enriched. */
+  normalizedTitle?: string;
+  /** True when skills or work mode come from the stored enrichment instead of the listing. */
+  enriched?: boolean;
 }
 export interface Source {
   id: string;

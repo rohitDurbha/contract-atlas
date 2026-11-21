@@ -3,7 +3,7 @@ const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
-import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources, sourceHealth } from './db.js';
+import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources, sourceHealth, workModeSql } from './db.js';
 import { formatRun } from './ingestion.js';
 import type { Overview } from '../src/types.js';
 import type { Database } from './database.js';
@@ -29,8 +29,9 @@ app.get('/api/jobs/:id',async c=> {
 app.get('/api/sources',async c=>c.json(await listSources(c.env.DB)));
 app.get('/api/overview',async c=> {
   const db=c.env.DB,today=new Date(Date.now()-24*3_600_000).toISOString();
+  const mode=await workModeSql(db);
   const [stats,sourceStats,last,schedule]=await Promise.all([
-    db.prepare(`SELECT count(*) AS total, sum(CASE WHEN posted_at>=? THEN 1 ELSE 0 END) AS today, sum(CASE WHEN work_mode=\'Remote\' THEN 1 ELSE 0 END) AS remote, count(DISTINCT company) AS companies FROM jobs WHERE ${feedScopeSql()} AND source_id NOT IN (${retiredSql})`).bind(today,...RETIRED_SOURCE_IDS).first<any>(),
+    db.prepare(`SELECT count(*) AS total, sum(CASE WHEN posted_at>=? THEN 1 ELSE 0 END) AS today, sum(CASE WHEN ${mode}=\'Remote\' THEN 1 ELSE 0 END) AS remote, count(DISTINCT company) AS companies FROM jobs WHERE ${feedScopeSql()} AND source_id NOT IN (${retiredSql})`).bind(today,...RETIRED_SOURCE_IDS).first<any>(),
     listSources(db).then(sourceHealth),
     db.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT 1').first<any>(),
     db.prepare("SELECT value FROM settings WHERE key='schedule_enabled'").first<{value:string}>(),

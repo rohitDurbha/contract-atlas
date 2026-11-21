@@ -4,7 +4,7 @@
 // description of each role the site lists), so matching needs no model, no
 // network call and no AI cost. Resume text is tokenised in memory to answer a
 // single call and is never written to the database, a cache or a log.
-import { feedScopeSql, hydrate } from './db.js';
+import { applyEnrichment, enrichmentRows, feedScopeSql, hydrate } from './db.js';
 import { SOURCES } from './sources.js';
 import type { Job } from '../src/types.js';
 import type { Database } from './database.js';
@@ -162,7 +162,8 @@ async function loadIndex(db: Database, now?: Date): Promise<RoleIndex> {
 async function feedRoles(db: Database, now: Date): Promise<Job[]> {
   const ids = SOURCES.map(s => s.id);
   const rows = await db.prepare(`SELECT * FROM jobs j WHERE ${feedScopeSql('j', now)} AND j.source_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
-  return rows.results.map(hydrate);
+  const stored = await enrichmentRows(db);
+  return rows.results.map(row => { const job = hydrate(row); return applyEnrichment(job, stored.get(job.id)); });
 }
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
