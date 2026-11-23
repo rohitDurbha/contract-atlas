@@ -5,6 +5,7 @@ import { freeFetch } from '../server/free-runtime';
 import { readFile } from 'node:fs/promises';
 import { isPayModel } from '../server/pay-model';
 import { duplicateFlagDrift } from '../server/db';
+import { enrichmentProblems } from '../server/enrichment';
 const {db,close}=openSQLite(resolve('data/atlas.sqlite'),true);
 try {
   const integrity=await db.prepare('PRAGMA quick_check').first<string>('quick_check');
@@ -19,6 +20,12 @@ try {
   if(!feedIndex)throw new Error('Snapshot is missing the jobs_feed index; publishing stopped.');
   const listed=await db.prepare("SELECT count(*) n FROM jobs WHERE duplicate=1").first<any>();
   console.log(JSON.stringify({repostFlags:'current',flagged:listed.n}));
+  // Stored LLM answers are read straight into feed cards and MCP results,
+  // so a malformed row would show odd labels or pay to every visitor.
+  const enrichment=await enrichmentProblems(db);
+  if(enrichment.length)throw new Error(`Stored enrichment is malformed (${enrichment.length} problems, for example ${enrichment.slice(0,3).map(p=>`${p.jobId} ${p.problem}`).join('; ')}); publishing stopped.`);
+  const enriched=await db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table' AND name='job_enrichment'").first<any>();
+  console.log(JSON.stringify({enrichment:enriched.n?'valid':'absent',rows:enriched.n?(await db.prepare('SELECT count(*) n FROM job_enrichment').first<any>()).n:0}));
   const fetcher=freeFetch(db);
   for(const path of ['/api/overview','/api/sources','/api/jobs?q=Data%20Labeling%20Analyst','/api/jobs?page=2','/api/jobs?sort=pay']) {
     const response=await fetcher(new Request('https://atlas.test'+path));if(response.status!==200)throw new Error(`Snapshot verification failed: ${path}`);

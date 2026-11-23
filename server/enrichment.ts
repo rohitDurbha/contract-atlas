@@ -243,6 +243,40 @@ export async function pendingEnrichment(db: Database, now = new Date()): Promise
   return out;
 }
 
+export interface EnrichmentProblem { jobId: string; problem: string }
+
+// Checks every stored answer against the same rules parseEnrichment applies
+// when it saves one, so a hand edit, a bad migration or a future code change
+// cannot publish rows the readers would misread. A snapshot without the
+// table has nothing to check and returns no problems.
+export async function enrichmentProblems(db: Database): Promise<EnrichmentProblem[]> {
+  const table = await db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='job_enrichment'").first();
+  if (!table) return [];
+  const rows = (await db.prepare(`SELECT e.*, j.id AS role FROM job_enrichment e LEFT JOIN jobs j ON j.id=e.job_id ORDER BY e.job_id`).all<any>()).results;
+  const providers = Object.keys(ENRICHMENT_MODELS);
+  const out: EnrichmentProblem[] = [];
+  for (const r of rows) {
+    const add = (problem: string) => out.push({ jobId: r.job_id, problem });
+    if (r.role == null) add('no matching role');
+    if (!/^[0-9a-f]{64}$/.test(r.input_hash ?? '')) add('input hash is not a sha256 hex digest');
+    if (!providers.includes(r.provider)) add(`unknown provider ${JSON.stringify(r.provider)}`);
+    if (!String(r.model ?? '').trim()) add('empty model name');
+    let skills: unknown;
+    try { skills = JSON.parse(r.skills); } catch { skills = undefined; }
+    if (!Array.isArray(skills)) add('skills is not a JSON list');
+    else if (skills.length > MAX_SKILLS || skills.some(s => typeof s !== 'string' || !s.trim() || s.length > 40)) add('skills list has empty, long or non-text entries or too many entries');
+    if (!(SENIORITY as readonly string[]).includes(r.seniority)) add(`unknown seniority ${JSON.stringify(r.seniority)}`);
+    if (!(REMOTE as readonly string[]).includes(r.remote)) add(`unknown remote label ${JSON.stringify(r.remote)}`);
+    if (typeof r.normalized_title !== 'string' || r.normalized_title.length > 120) add('normalized title is missing or too long');
+    for (const [name, value] of [['pay_min', r.pay_min], ['pay_max', r.pay_max]] as const) {
+      if (value != null && !(typeof value === 'number' && value >= HOURLY_FLOOR && value <= HOURLY_CEILING)) add(`${name} is outside ${HOURLY_FLOOR} to ${HOURLY_CEILING} per hour`);
+    }
+    if (typeof r.pay_min === 'number' && typeof r.pay_max === 'number' && r.pay_min > r.pay_max) add('pay_min is above pay_max');
+    if (Number.isNaN(Date.parse(r.enriched_at ?? ''))) add('enriched_at is not a date');
+  }
+  return out;
+}
+
 // Deletes answers whose role is no longer in the snapshot.
 export async function pruneEnrichment(db: Database): Promise<number> {
   const { changes } = await db.prepare('DELETE FROM job_enrichment WHERE job_id NOT IN (SELECT id FROM jobs)').run();
