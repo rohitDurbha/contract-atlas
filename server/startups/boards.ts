@@ -29,7 +29,9 @@ export interface Board { ats: Ats; board: string }
 export interface BoardRead { roles: StartupRole[]; boardName: string | null; text: string }
 export type Get = (url: string) => Promise<string>;
 
-const SUMMARY_CHARS = 600;
+// The site links every role to its original posting, so only a short
+// snippet is kept to keep the bundled snapshot small.
+const SUMMARY_CHARS = 160;
 type Row = Record<string, any>;
 
 export function plain(html: string | null | undefined): string {

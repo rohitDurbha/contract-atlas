@@ -106,6 +106,19 @@ describe('resolving and collecting', () => {
     }
   });
 
+  it('drops roles from a guessed board once the company is marked noGuess', async () => {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      const text = 'Radiant builds things. Radiant is hiring. Join Radiant.';
+      const web = fakeWeb({ 'https://api.ashbyhq.com/posting-api/job-board/radiant?includeCompensation=true': JSON.stringify({ jobs: [{ id: 'r1', title: 'SRE', location: 'UK', descriptionPlain: text }, { id: 'r2', title: 'PM', location: 'UK', descriptionPlain: text }, { id: 'r3', title: 'AE', location: 'UK', descriptionPlain: text }] }) });
+      const radiant: StartupCompany = { id: 'radiant', name: 'Radiant', focus: 'Microreactors', location: 'El Segundo' };
+      expect(await collectStartups(db, { get: web.get, now, companies: [radiant] })).toMatchObject({ roles: 3 });
+      expect(await collectStartups(db, { get: web.get, now: new Date(now.getTime() + 3_600_000), companies: [{ ...radiant, noGuess: true }] })).toMatchObject({ roles: 0, withBoards: 0 });
+    } finally {
+      close();
+    }
+  });
+
   it('answers the StartupAtlas API on a snapshot that has never collected startups', async () => {
     const { db, close } = openSQLite(':memory:');
     try {

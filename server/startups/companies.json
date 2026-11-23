@@ -938,7 +938,8 @@
    "focus": "Nuclear microreactor to replace diesel generators",
    "location": "El Segundo",
    "careersUrl": "https://www.radiantnuclear.com/careers",
-   "tier": "250+"
+   "tier": "250+",
+   "noGuess": true
   },
   {
    "id": "ramp",

@@ -19,6 +19,9 @@ export interface StartupCompany {
   breakoutFocus?: string;
   ats?: Ats;
   board?: string;
+  // Set when the company's name is shared with another firm that has a board
+  // under the same slug, so a guess would list the wrong company's roles.
+  noGuess?: boolean;
 }
 export const STARTUP_COMPANIES = seed.companies as StartupCompany[];
 
@@ -123,7 +126,7 @@ export async function resolveCompany(company: StartupCompany, get: Get, stored?:
       } catch { /* fall through to guesses */ }
     }
   }
-  for (const slug of guessSlugs(company)) {
+  for (const slug of company.noGuess ? [] : guessSlugs(company)) {
     for (const ats of ['ashby', 'greenhouse', 'lever'] as const) {
       const board = { ats, board: slug };
       const read = await attempt(board);
@@ -171,8 +174,9 @@ export async function collectStartups(db: Database, options: { get?: Get; now?: 
   let checked = 0, failed = 0;
   await pool(companies, options.concurrency ?? 8, async company => {
     const prior = stored.get(company.id);
-    const priorBoard = prior?.ats && prior?.board ? { ats: prior.ats as Ats, board: prior.board as string } : null;
-    if (!priorBoard && !company.board && prior?.checked_at && now.getTime() - Date.parse(prior.checked_at) < DAY) return;
+    // A company marked noGuess ignores a board stored by an earlier guess.
+    const priorBoard = prior?.ats && prior?.board && !company.noGuess ? { ats: prior.ats as Ats, board: prior.board as string } : null;
+    if (!prior?.ats && !company.board && prior?.checked_at && now.getTime() - Date.parse(prior.checked_at) < DAY) return;
     checked++;
     const at = now.toISOString();
     let result: Resolution;
@@ -181,7 +185,9 @@ export async function collectStartups(db: Database, options: { get?: Get; now?: 
     }
     if (result.status === 'ok' && result.read && result.board) {
       await saveRoles(db, company.id, result.read.roles, at);
-    } else if (priorBoard) {
+    } else if (!priorBoard) {
+      await db.prepare('DELETE FROM startup_jobs WHERE company_id=?').bind(company.id).run();
+    } else {
       // A board that answered before and fails now keeps its roles for a day.
       failed++;
       if (prior?.resolved_at && now.getTime() - Date.parse(prior.resolved_at) > DAY) await db.prepare('DELETE FROM startup_jobs WHERE company_id=?').bind(company.id).run();
@@ -201,7 +207,7 @@ export async function collectStartups(db: Database, options: { get?: Get; now?: 
 
 // ---- Reads for the site ----
 
-export interface StartupCompanyView extends Omit<StartupCompany, 'board' | 'ats'> {
+export interface StartupCompanyView extends Omit<StartupCompany, 'board' | 'ats' | 'noGuess'> {
   ats: Ats | null;
   board: string | null;
   boardUrl: string | null;
@@ -230,7 +236,7 @@ function publicBoardUrl(ats: Ats | null, board: string | null): string | null {
 export async function startupCompanies(db: Database): Promise<StartupCompanyView[]> {
   const ready = await hasStartupTables(db);
   const rows = ready ? new Map((await db.prepare(`SELECT c.*, (SELECT count(*) FROM startup_jobs j WHERE j.company_id=c.id AND j.remote=1) AS remote_count FROM startup_companies c`).all<any>()).results.map(r => [r.id, r])) : new Map();
-  return STARTUP_COMPANIES.map(c => {
+  return STARTUP_COMPANIES.map(({ noGuess: _skip, ...c }) => {
     const r = rows.get(c.id);
     const ats = (r?.ats ?? null) as Ats | null, board = r?.board ?? null;
     return {
