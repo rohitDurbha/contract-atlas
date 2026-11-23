@@ -2,7 +2,7 @@ import { descriptionBlocks } from './description';
 import { plainTitle, seniorityLabel } from './roleLabels';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Compass, ExternalLink, Globe2, LayoutGrid, List, MapPin, Menu, Radio, RefreshCw, Search, SlidersHorizontal, Sparkles, SquareArrowOutUpRight, Timer, TrendingUp, Wifi, X, Zap, BriefcaseBusiness, Activity } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Compass, ExternalLink, Globe2, LayoutGrid, List, MapPin, Menu, Radio, RefreshCw, Search, SlidersHorizontal, Sparkles, SquareArrowOutUpRight, Timer, TrendingUp, Wifi, X, Zap, BriefcaseBusiness, Activity, Rocket } from 'lucide-react';
 import type { Feed, Job, Overview, Source, Run } from './types';
 import { ALL_PROVIDERS, coverageNotice, directorySummary, filterSources, readableSourcesNote, sourceBadge } from './sourceLabels';
 
@@ -85,6 +85,8 @@ export default function App(){
         <div className="nav-divider"/>
         <button className={pageView==='sources'?'nav-item active':'nav-item'} onClick={()=>changeView('sources')}><Globe2 size={18}/><span>Source directory</span><ArrowUpRight size={14}/></button>
         <button className={pageView==='activity'?'nav-item active':'nav-item'} onClick={()=>changeView('activity')}><Activity size={18}/><span>Refresh activity</span></button>
+        <div className="nav-divider"/>
+        <a className="nav-item" href="/startups"><Rocket size={18}/><span>StartupAtlas</span><ArrowUpRight size={14}/></a>
       </nav>
       <div className="sidebar-bottom">
         <div className="sync-card"><span className="sync-symbol"><Radio size={19}/></span><strong>A fresh perspective.</strong><p>{stats?.scheduleEnabled?'Source checks are scheduled every two hours. Check times can vary.':'Browse verified roles and check source health in one place.'}</p><div className="sync-mini"><span className={stats?.scheduleEnabled?'live-dot':'neutral-dot'}/>{stats?.scheduleEnabled?'Two-hour checks scheduled':'Latest published snapshot'}</div></div>
