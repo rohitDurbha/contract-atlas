@@ -1,0 +1,984 @@
+{
+ "note": "From the Startup Career Boards and Breakout List workbook shared on Nov 23, 2026. fastestRank is the rank in the 32 fastest-growing startups of the past 30 days, tier is the Breakout List employee band.",
+ "companies": [
+  {
+   "id": "netris",
+   "name": "Netris",
+   "focus": "AI network automation",
+   "location": "Remote global",
+   "careersUrl": "https://netris.io/careers/",
+   "fastestRank": 1
+  },
+  {
+   "id": "open",
+   "name": "Open",
+   "focus": "AI customer support",
+   "location": "Remote EU",
+   "careersUrl": "https://careers.open.cx/",
+   "fastestRank": 2,
+   "ats": "workable",
+   "board": "open-252"
+  },
+  {
+   "id": "pluto-security",
+   "name": "Pluto Security",
+   "focus": "Security for AI workflows",
+   "location": "US",
+   "careersUrl": "https://pluto.security/careers/",
+   "fastestRank": 3
+  },
+  {
+   "id": "concourse",
+   "name": "Concourse",
+   "focus": "Software for public agencies",
+   "location": "US",
+   "careersUrl": "https://jobs.ashbyhq.com/concoursetech",
+   "fastestRank": 4,
+   "ats": "ashby",
+   "board": "concoursetech"
+  },
+  {
+   "id": "novisto",
+   "name": "Novisto",
+   "focus": "Sustainability software",
+   "location": "Canada / London",
+   "careersUrl": "https://novisto.com/company/careers",
+   "fastestRank": 5
+  },
+  {
+   "id": "mintlify",
+   "name": "Mintlify",
+   "focus": "Developer documentation",
+   "location": "SF / NYC",
+   "careersUrl": "https://www.mintlify.com/careers",
+   "fastestRank": 6
+  },
+  {
+   "id": "noma",
+   "name": "Noma",
+   "focus": "AI agent security platform",
+   "location": "TLV / Remote",
+   "careersUrl": "https://noma.security/careers",
+   "fastestRank": 7
+  },
+  {
+   "id": "capsa",
+   "name": "Capsa",
+   "focus": "AI for private capital",
+   "location": "London / NYC",
+   "careersUrl": "https://capsa.ai/careers",
+   "fastestRank": 8
+  },
+  {
+   "id": "tekst",
+   "name": "Tekst",
+   "focus": "Enterprise process intelligence software",
+   "location": "EU",
+   "careersUrl": "https://careers.tekst.com/",
+   "fastestRank": 9
+  },
+  {
+   "id": "letter-ai",
+   "name": "Letter AI",
+   "focus": "AI sales enablement platform",
+   "location": "Chicago",
+   "careersUrl": "https://jobs.gem.com/letter-ai",
+   "fastestRank": 10,
+   "ats": "gem",
+   "board": "letter-ai"
+  },
+  {
+   "id": "ease-health",
+   "name": "Ease Health",
+   "focus": "Behavioral health practice software",
+   "location": "NYC / Remote US",
+   "careersUrl": "https://easehealth.com/careers",
+   "fastestRank": 11
+  },
+  {
+   "id": "lightfield",
+   "name": "Lightfield",
+   "focus": "CRM that updates itself",
+   "location": "SF / Cambridge",
+   "careersUrl": "https://jobs.ashbyhq.com/Lightfield",
+   "fastestRank": 12,
+   "ats": "ashby",
+   "board": "Lightfield"
+  },
+  {
+   "id": "idler",
+   "name": "idler",
+   "focus": "AI model evaluation environments",
+   "location": "SF",
+   "careersUrl": "https://idler.ai/careers",
+   "fastestRank": 13
+  },
+  {
+   "id": "factory",
+   "name": "Factory",
+   "focus": "AI software engineering agents",
+   "location": "SF / London",
+   "careersUrl": "https://factory.ai/careers",
+   "fastestRank": 14,
+   "tier": "101-250",
+   "breakoutFocus": "Autonomous coding agents that write software for enterprises"
+  },
+  {
+   "id": "coram-ai",
+   "name": "Coram AI",
+   "focus": "AI video security platform",
+   "location": "US",
+   "careersUrl": "https://www.coram.ai/careers",
+   "fastestRank": 15
+  },
+  {
+   "id": "inferact",
+   "name": "Inferact",
+   "focus": "Production AI model inference",
+   "location": "SF / Singapore / Remote",
+   "careersUrl": "https://inferact.ai/careers",
+   "fastestRank": 16
+  },
+  {
+   "id": "gridsight",
+   "name": "GRIDSIGHT",
+   "focus": "Electric grid capacity software",
+   "location": "Global",
+   "careersUrl": "https://www.gridsight.ai/careers",
+   "fastestRank": 17
+  },
+  {
+   "id": "scaled-cognition",
+   "name": "Scaled Cognition",
+   "focus": "Enterprise customer service AI",
+   "location": "NYC / SF / Boston",
+   "careersUrl": "https://www.scaledcognition.com/careers",
+   "fastestRank": 18
+  },
+  {
+   "id": "patlytics",
+   "name": "Patlytics",
+   "focus": "AI patent analysis platform",
+   "location": "NYC / Remote / EU",
+   "careersUrl": "https://patlytics.ai/careers",
+   "fastestRank": 19
+  },
+  {
+   "id": "translucent-ai",
+   "name": "Translucent AI",
+   "focus": "Healthcare financial operating system",
+   "location": "NYC",
+   "careersUrl": "https://www.translucent.ai/",
+   "fastestRank": 20
+  },
+  {
+   "id": "telli",
+   "name": "telli",
+   "focus": "AI customer experience agents",
+   "location": "Berlin / Paris",
+   "careersUrl": "https://jobs.ashbyhq.com/telli",
+   "fastestRank": 21,
+   "ats": "ashby",
+   "board": "telli"
+  },
+  {
+   "id": "sygaldry-technologies",
+   "name": "Sygaldry Technologies",
+   "focus": "Quantum AI training servers",
+   "location": "Ann Arbor / SF",
+   "careersUrl": "https://jobs.ashbyhq.com/sygaldry-technologies",
+   "fastestRank": 22,
+   "ats": "ashby",
+   "board": "sygaldry-technologies"
+  },
+  {
+   "id": "compri",
+   "name": "compri",
+   "focus": "AI procurement for manufacturers",
+   "location": "Milan / Hybrid",
+   "careersUrl": "https://compriai.teamtailor.com/",
+   "fastestRank": 23,
+   "ats": "teamtailor",
+   "board": "compriai"
+  },
+  {
+   "id": "xcures",
+   "name": "xCures",
+   "focus": "Clinical data and medical AI",
+   "location": "Remote US",
+   "careersUrl": "https://xcures.com/careers/",
+   "fastestRank": 24
+  },
+  {
+   "id": "vurvey-labs",
+   "name": "Vurvey Labs",
+   "focus": "Consumer market intelligence research",
+   "location": "Cincinnati / NYC",
+   "careersUrl": "https://vurvey.com/careers/",
+   "fastestRank": 25
+  },
+  {
+   "id": "mecka",
+   "name": "Mecka",
+   "focus": "Movement data for robotics",
+   "location": "Remote",
+   "careersUrl": "https://www.mecka.ai/careers",
+   "fastestRank": 26
+  },
+  {
+   "id": "omni",
+   "name": "Omni",
+   "focus": "AI business analytics platform",
+   "location": "Global",
+   "careersUrl": "https://jobs.ashbyhq.com/omni",
+   "fastestRank": 27,
+   "ats": "ashby",
+   "board": "omni"
+  },
+  {
+   "id": "baseten",
+   "name": "Baseten",
+   "focus": "Inference platform",
+   "location": "SF / NYC / Remote",
+   "careersUrl": "https://baseten.co/careers",
+   "fastestRank": 28,
+   "tier": "250+",
+   "breakoutFocus": "Inference cloud for open and custom models"
+  },
+  {
+   "id": "crosby",
+   "name": "Crosby",
+   "focus": "AI law firm",
+   "location": "NYC / Remote US",
+   "careersUrl": "https://crosby.ai/careers",
+   "fastestRank": 29
+  },
+  {
+   "id": "karman-industries",
+   "name": "Karman Industries",
+   "focus": "Cooling systems for AI factories",
+   "location": "LA",
+   "careersUrl": "https://www.karmanindustries.com/careers",
+   "fastestRank": 30
+  },
+  {
+   "id": "hostedai",
+   "name": "hosted·ai",
+   "focus": "GPU cloud infrastructure platform",
+   "location": "Global",
+   "careersUrl": "https://www.hosted.ai/careers",
+   "fastestRank": 31
+  },
+  {
+   "id": "agentio",
+   "name": "Agentio",
+   "focus": "Creator advertising platform",
+   "location": "NYC / London",
+   "careersUrl": "https://www.agentio.com/careers",
+   "fastestRank": 32
+  },
+  {
+   "id": "conduit",
+   "name": "Conduit",
+   "focus": "Non-invasive brain computer interface that turns thoughts into text",
+   "location": "SF",
+   "careersUrl": "https://jobs.ashbyhq.com/conduitintelligence",
+   "tier": "1-10",
+   "ats": "ashby",
+   "board": "conduitintelligence"
+  },
+  {
+   "id": "hone",
+   "name": "Hone",
+   "focus": "Autonomous agents that optimize business metrics",
+   "location": "SF",
+   "careersUrl": "https://jobs.ashbyhq.com/hone",
+   "tier": "1-10",
+   "ats": "ashby",
+   "board": "hone"
+  },
+  {
+   "id": "normal",
+   "name": "Normal",
+   "focus": "Hardware engineering and machining data for training AI",
+   "location": "SF",
+   "careersUrl": "https://www.normalfactory.com/",
+   "tier": "1-10"
+  },
+  {
+   "id": "standard-intelligence",
+   "name": "Standard Intelligence",
+   "focus": "Foundation models that operate computers like humans do",
+   "location": "SF",
+   "tier": "1-10"
+  },
+  {
+   "id": "tacit-labs",
+   "name": "Tacit Labs",
+   "focus": "Autonomous biotech research for drug discovery",
+   "location": "SF",
+   "tier": "1-10"
+  },
+  {
+   "id": "american-terawatt",
+   "name": "American Terawatt",
+   "focus": "High voltage electrical transmission for datacenters",
+   "location": "SF",
+   "careersUrl": "https://jobs.ashbyhq.com/American%20Terawatt",
+   "tier": "11-25",
+   "ats": "ashby",
+   "board": "American Terawatt"
+  },
+  {
+   "id": "convergent",
+   "name": "Convergent",
+   "focus": "Evals and optimization for production AI agents",
+   "location": "SF",
+   "tier": "11-25"
+  },
+  {
+   "id": "core-automation",
+   "name": "Core Automation",
+   "focus": "New model architectures and algorithms for agents",
+   "location": "SF",
+   "tier": "11-25"
+  },
+  {
+   "id": "engram",
+   "name": "Engram",
+   "focus": "Memory system that learns company knowledge for AI agents",
+   "location": "SF",
+   "careersUrl": "https://jobs.ashbyhq.com/engram",
+   "tier": "11-25",
+   "ats": "ashby",
+   "board": "engram"
+  },
+  {
+   "id": "instinct",
+   "name": "Instinct",
+   "focus": "Personal AI assistant that operates a computer for you",
+   "location": "SF",
+   "careersUrl": "https://instinct.com/",
+   "tier": "11-25"
+  },
+  {
+   "id": "keenable",
+   "name": "Keenable",
+   "focus": "API for agents to do web searches and page retrieval",
+   "location": "Los Angeles",
+   "careersUrl": "https://jobs.ashbyhq.com/keenable",
+   "tier": "11-25",
+   "ats": "ashby",
+   "board": "keenable"
+  },
+  {
+   "id": "lumaril",
+   "name": "Lumaril",
+   "focus": "Software that optimizes factory control systems to increase yield",
+   "location": "NYC",
+   "tier": "11-25"
+  },
+  {
+   "id": "neion-bio",
+   "name": "Neion Bio",
+   "focus": "Engineered chicken eggs that manufacture drugs",
+   "location": "NYC",
+   "tier": "11-25"
+  },
+  {
+   "id": "pangram-labs",
+   "name": "Pangram Labs",
+   "focus": "AI that detects AI-generated text for schools and publishers",
+   "location": "NYC",
+   "careersUrl": "https://jobs.ashbyhq.com/pangramlabs",
+   "tier": "11-25",
+   "ats": "ashby",
+   "board": "pangramlabs"
+  },
+  {
+   "id": "quadrillion",
+   "name": "Quadrillion",
+   "focus": "Autonomous data experiments for researchers and data scientists",
+   "location": "NYC",
+   "tier": "11-25"
+  },
+  {
+   "id": "re",
+   "name": "Re",
+   "focus": "Stablecoin deposits that back reinsurance pools",
+   "location": "SF",
+   "tier": "11-25"
+  },
+  {
+   "id": "ricursive",
+   "name": "Ricursive",
+   "focus": "AI for designing semiconductors",
+   "location": "Palo Alto",
+   "careersUrl": "https://jobs.ashbyhq.com/ricursive%20intelligence",
+   "tier": "11-25",
+   "ats": "ashby",
+   "board": "ricursive intelligence"
+  },
+  {
+   "id": "sail-research",
+   "name": "Sail Research",
+   "focus": "Inference API and sandbox infrastructure for long-running AI agents",
+   "location": "SF",
+   "tier": "11-25"
+  },
+  {
+   "id": "trajectory",
+   "name": "Trajectory",
+   "focus": "Post-training tool that continually fine-tunes models based on usage",
+   "location": "SF",
+   "careersUrl": "https://jobs.ashbyhq.com/trajectory",
+   "tier": "11-25",
+   "ats": "ashby",
+   "board": "trajectory"
+  },
+  {
+   "id": "watney-robotics",
+   "name": "Watney Robotics",
+   "focus": "Robots that maintain datacenters",
+   "location": "SF",
+   "careersUrl": "https://jobs.ashbyhq.com/watney",
+   "tier": "11-25",
+   "ats": "ashby",
+   "board": "watney"
+  },
+  {
+   "id": "infisical",
+   "name": "Infisical",
+   "focus": "Open source secrets manager for developers and agents",
+   "location": "Remote",
+   "careersUrl": "https://infisical.com/careers",
+   "tier": "26-50"
+  },
+  {
+   "id": "long-lake",
+   "name": "Long Lake",
+   "focus": "Acquires and holds service businesses and optimizes them with AI",
+   "location": "SF / NYC",
+   "tier": "26-50"
+  },
+  {
+   "id": "luzern-risk",
+   "name": "Luzern Risk",
+   "focus": "Software for businesses to set up their own captive insurance carriers",
+   "location": "NYC",
+   "tier": "26-50"
+  },
+  {
+   "id": "mithril",
+   "name": "Mithril",
+   "focus": "Neocloud for spot and reserved GPUs",
+   "location": "Palo Alto",
+   "tier": "26-50"
+  },
+  {
+   "id": "revel",
+   "name": "Revel",
+   "focus": "Software for testing and controlling industrial hardware",
+   "location": "Los Angeles",
+   "tier": "26-50"
+  },
+  {
+   "id": "specter",
+   "name": "Specter",
+   "focus": "Video analysis models that monitor industrial sites",
+   "location": "SF",
+   "tier": "26-50"
+  },
+  {
+   "id": "turbopuffer",
+   "name": "Turbopuffer",
+   "focus": "Vector and full text search index built on object storage",
+   "location": "Remote / NYC",
+   "careersUrl": "https://turbopuffer.com/jobs",
+   "tier": "26-50"
+  },
+  {
+   "id": "aaru",
+   "name": "Aaru",
+   "focus": "Simulations of people for consumer research",
+   "location": "NYC",
+   "tier": "51-100"
+  },
+  {
+   "id": "beacon-software",
+   "name": "Beacon Software",
+   "focus": "Holding company that buys small vertical software companies",
+   "location": "Toronto / SF",
+   "tier": "51-100"
+  },
+  {
+   "id": "fab2",
+   "name": "Fab2",
+   "focus": "Semiconductor manufacturing tools and microfabs that produce chips",
+   "location": "Austin",
+   "tier": "51-100"
+  },
+  {
+   "id": "fal",
+   "name": "fal",
+   "focus": "API for image and video models",
+   "location": "SF",
+   "careersUrl": "https://fal.ai/careers",
+   "tier": "51-100"
+  },
+  {
+   "id": "general-matter",
+   "name": "General Matter",
+   "focus": "US uranium enrichment facilities for nuclear reactors",
+   "location": "Los Angeles",
+   "tier": "51-100"
+  },
+  {
+   "id": "listen-labs",
+   "name": "Listen Labs",
+   "focus": "AI interviewer that conducts customer and user research",
+   "location": "SF / NYC",
+   "tier": "51-100"
+  },
+  {
+   "id": "medra",
+   "name": "Medra",
+   "focus": "Robots that run wet lab biology experiments",
+   "location": "SF",
+   "tier": "51-100"
+  },
+  {
+   "id": "pallet",
+   "name": "Pallet",
+   "focus": "Agents that run freight, warehousing and logistics for supply chains",
+   "location": "SF",
+   "tier": "51-100"
+  },
+  {
+   "id": "periodic-labs",
+   "name": "Periodic Labs",
+   "focus": "Autonomous labs that run physics and chemistry experiments",
+   "location": "Menlo Park, CA",
+   "tier": "51-100"
+  },
+  {
+   "id": "sf-compute",
+   "name": "SF Compute",
+   "focus": "GPU neocloud that lets you sell back unused compute",
+   "location": "SF",
+   "careersUrl": "https://sfcompute.com/careers",
+   "tier": "51-100"
+  },
+  {
+   "id": "simile",
+   "name": "Simile",
+   "focus": "Simulated consumer research panels for enterprises",
+   "location": "SF / NYC",
+   "tier": "51-100"
+  },
+  {
+   "id": "twenty",
+   "name": "Twenty",
+   "focus": "Offensive cyber warfare software for the US military",
+   "location": "Arlington, VA",
+   "tier": "51-100"
+  },
+  {
+   "id": "xdof",
+   "name": "XDOF",
+   "focus": "Teleoperation rigs and training datasets for robotics labs",
+   "location": "San Mateo, CA",
+   "tier": "51-100"
+  },
+  {
+   "id": "amca",
+   "name": "Amca",
+   "focus": "Hydraulic and electrical parts for aircraft",
+   "location": "El Segundo, CA",
+   "tier": "101-250"
+  },
+  {
+   "id": "antares-nuclear",
+   "name": "Antares Nuclear",
+   "focus": "Nuclear microreactors for military bases",
+   "location": "Torrance, CA",
+   "tier": "101-250"
+  },
+  {
+   "id": "aven",
+   "name": "Aven",
+   "focus": "Credit cards backed by home equity",
+   "location": "Campbell, CA",
+   "careersUrl": "https://www.aven.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "bitwise",
+   "name": "Bitwise",
+   "focus": "Crypto index funds and ETFs for institutions",
+   "location": "SF",
+   "careersUrl": "https://bitwiseinvestments.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "boom-supersonic",
+   "name": "Boom Supersonic",
+   "focus": "Supersonic airliners and gas turbines",
+   "location": "Denver",
+   "careersUrl": "https://boomsupersonic.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "brain-co",
+   "name": "Brain Co.",
+   "focus": "AI for governments, insurance and healthcare firms",
+   "location": "SF",
+   "tier": "101-250"
+  },
+  {
+   "id": "braintrust",
+   "name": "Braintrust",
+   "focus": "Evals, logging and observability for AI software",
+   "location": "SF",
+   "careersUrl": "https://www.braintrust.dev/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "castelion",
+   "name": "Castelion",
+   "focus": "Hypersonic strike missile for military use",
+   "location": "Torrance, CA",
+   "careersUrl": "https://www.castelion.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "enter",
+   "name": "Enter",
+   "focus": "Legal software that writes litigation defenses for Brazilian corporations",
+   "location": "São Paulo, Brazil",
+   "tier": "101-250"
+  },
+  {
+   "id": "exa",
+   "name": "Exa",
+   "focus": "API that does web searches for AI agents",
+   "location": "SF",
+   "careersUrl": "https://exa.ai/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "fractile",
+   "name": "Fractile",
+   "focus": "Chips that run inference for AI models",
+   "location": "London / Bristol",
+   "careersUrl": "https://www.fractile.ai/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "higgsfield",
+   "name": "Higgsfield",
+   "focus": "AI video tools for marketers and filmmakers",
+   "location": "SF / Kazakhstan",
+   "careersUrl": "https://higgsfield.ai/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "modal",
+   "name": "Modal",
+   "focus": "Serverless compute for inference, training and sandboxes",
+   "location": "NYC",
+   "careersUrl": "https://modal.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "neros",
+   "name": "Neros",
+   "focus": "Attack and interceptor drones for Western militaries",
+   "location": "Torrance, CA",
+   "careersUrl": "https://www.neros.tech/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "nominal",
+   "name": "Nominal",
+   "focus": "Software that monitors telemetry and tests for hardware engineering",
+   "location": "Los Angeles / NYC",
+   "careersUrl": "https://www.nominal.io/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "olix",
+   "name": "OLIX",
+   "focus": "Chips for running AI model inference",
+   "location": "London / Austin",
+   "tier": "101-250"
+  },
+  {
+   "id": "openevidence",
+   "name": "OpenEvidence",
+   "focus": "Software that answers clinical questions for doctors",
+   "location": "Miami / SF",
+   "careersUrl": "https://www.openevidence.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "physical-intelligence",
+   "name": "Physical Intelligence",
+   "focus": "Foundation models for controlling any robot",
+   "location": "SF",
+   "careersUrl": "https://www.physicalintelligence.company/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "rogo",
+   "name": "Rogo",
+   "focus": "AI analyst for investment banks and financial institutions",
+   "location": "NYC / London",
+   "careersUrl": "https://www.rogo.ai/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "rox",
+   "name": "Rox",
+   "focus": "Sales agents that find buyers and manage enterprise sales pipelines",
+   "location": "SF",
+   "careersUrl": "https://www.rox.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "serval",
+   "name": "Serval",
+   "focus": "Agents that resolve IT help desk tickets",
+   "location": "SF",
+   "tier": "101-250"
+  },
+  {
+   "id": "socket",
+   "name": "Socket",
+   "focus": "Package management security tool that blocks malicious packages",
+   "location": "Remote",
+   "careersUrl": "https://socket.dev/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "state-affairs",
+   "name": "State Affairs",
+   "focus": "Tracks state legislation for enterprises",
+   "location": "Washington, DC",
+   "careersUrl": "https://stateaffairs.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "valar-atomics",
+   "name": "Valar Atomics",
+   "focus": "Gas nuclear reactors for datacenters and hydrogen fuel",
+   "location": "El Segundo / Orangeville",
+   "tier": "101-250"
+  },
+  {
+   "id": "vapi",
+   "name": "Vapi",
+   "focus": "Developer API for building voice agents",
+   "location": "SF",
+   "careersUrl": "https://vapi.ai/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "verse-medical",
+   "name": "Verse Medical",
+   "focus": "Medical equipment ordering and insurance checks for clinicians",
+   "location": "NYC",
+   "tier": "101-250"
+  },
+  {
+   "id": "workos",
+   "name": "WorkOS",
+   "focus": "APIs for adding enterprise SSO and directory sync to apps",
+   "location": "Remote / SF",
+   "careersUrl": "https://workos.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "xbow",
+   "name": "XBOW",
+   "focus": "Autonomous penetration testing for software",
+   "location": "Remote",
+   "careersUrl": "https://xbow.com/careers",
+   "tier": "101-250"
+  },
+  {
+   "id": "arcana",
+   "name": "Arcana",
+   "focus": "Portfolio analysis tool that analyzes risk for hedge funds",
+   "location": "NYC / Bangalore / Coimbatore",
+   "tier": "250+"
+  },
+  {
+   "id": "base",
+   "name": "Base",
+   "focus": "Home batteries and electricity",
+   "location": "Austin",
+   "careersUrl": "https://www.basepowercompany.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "cambridge-aerospace",
+   "name": "Cambridge Aerospace",
+   "focus": "Interceptor missiles that destroy drone swarms",
+   "location": "Cambridge, UK",
+   "tier": "250+"
+  },
+  {
+   "id": "cognition",
+   "name": "Cognition",
+   "focus": "Autonomous software engineer that writes code for teams",
+   "location": "SF",
+   "careersUrl": "https://cognition.ai/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "elevenlabs",
+   "name": "ElevenLabs",
+   "focus": "Voice models and agents that generate audio",
+   "location": "NYC",
+   "careersUrl": "https://elevenlabs.io/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "etched",
+   "name": "Etched",
+   "focus": "Chips that run inference for frontier models",
+   "location": "San Jose",
+   "careersUrl": "https://www.etched.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "fireworks-ai",
+   "name": "Fireworks AI",
+   "focus": "Inference cloud for open and custom models",
+   "location": "San Mateo, CA",
+   "careersUrl": "https://fireworks.ai/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "fluidstack",
+   "name": "Fluidstack",
+   "focus": "Builds and runs AI datacenters",
+   "location": "Austin / SF / NYC",
+   "careersUrl": "https://fluidstack.io/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "handshake",
+   "name": "Handshake",
+   "focus": "Network of people that produces AI training data",
+   "location": "SF",
+   "careersUrl": "https://joinhandshake.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "harvey",
+   "name": "Harvey",
+   "focus": "Legal software that does research, drafting and contract review",
+   "location": "SF / NYC",
+   "careersUrl": "https://www.harvey.ai/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "kalshi",
+   "name": "Kalshi",
+   "focus": "Market for betting on sports, news and politics",
+   "location": "NYC",
+   "careersUrl": "https://kalshi.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "kraken",
+   "name": "Kraken",
+   "focus": "Regulated crypto, stocks and futures exchange",
+   "location": "Remote",
+   "careersUrl": "https://www.kraken.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "lovable",
+   "name": "Lovable",
+   "focus": "AI that builds web apps",
+   "location": "Stockholm",
+   "careersUrl": "https://lovable.dev/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "mach-industries",
+   "name": "Mach Industries",
+   "focus": "Drones, munitions and interceptors for the US military",
+   "location": "Huntington Beach, CA",
+   "careersUrl": "https://www.machindustries.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "mercor",
+   "name": "Mercor",
+   "focus": "Expert network for training AI models",
+   "location": "SF",
+   "careersUrl": "https://www.mercor.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "owner",
+   "name": "Owner",
+   "focus": "Restaurant software for taking orders and marketing",
+   "location": "Remote / Toronto",
+   "careersUrl": "https://www.owner.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "radiant",
+   "name": "Radiant",
+   "focus": "Nuclear microreactor to replace diesel generators",
+   "location": "El Segundo",
+   "careersUrl": "https://www.radiantnuclear.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "ramp",
+   "name": "Ramp",
+   "focus": "Corporate cards for businesses",
+   "location": "NYC",
+   "careersUrl": "https://ramp.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "saronic",
+   "name": "Saronic",
+   "focus": "Autonomous surface vessels for the US Navy",
+   "location": "Austin",
+   "careersUrl": "https://www.saronic.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "stoke-space",
+   "name": "Stoke Space",
+   "focus": "Reusable rockets for satellite launches",
+   "location": "Kent, WA",
+   "careersUrl": "https://stokespace.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "verkada",
+   "name": "Verkada",
+   "focus": "Commercial security cameras, alarms and access control for enterprises",
+   "location": "San Mateo",
+   "careersUrl": "https://www.verkada.com/careers",
+   "tier": "250+"
+  },
+  {
+   "id": "whop",
+   "name": "Whop",
+   "focus": "Storefront and payments for selling information products",
+   "location": "NYC / SF",
+   "careersUrl": "https://whop.com/careers",
+   "tier": "250+"
+  }
+ ]
+}
