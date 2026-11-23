@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { isPayModel } from '../server/pay-model';
 import { duplicateFlagDrift } from '../server/db';
 import { enrichmentProblems } from '../server/enrichment';
+import { hasStartupTables, STARTUP_COMPANIES } from '../server/startups/collect';
 const {db,close}=openSQLite(resolve('data/atlas.sqlite'),true);
 try {
   const integrity=await db.prepare('PRAGMA quick_check').first<string>('quick_check');
@@ -33,6 +34,16 @@ try {
     if(path==='/api/sources'&&data.length!==SOURCES.length)throw new Error('Source registry incomplete.');
     if(path==='/api/overview' && (!data.totalJobs || !data.lastRun || data.lastRun.status==='running' || data.lastRun.status==='failed'))throw new Error('Snapshot has no active roles or no finished usable refresh.');
     console.log(JSON.stringify({path,total:data.totalJobs??data.total??data.length}));
+  }
+  // StartupAtlas lives in its own tables. Its routes must answer, and every
+  // stored role must link to an https posting at a listed company.
+  for(const path of ['/api/startups/overview','/api/startups/companies','/api/startups/jobs']){const response=await fetcher(new Request('https://atlas.test'+path));if(response.status!==200)throw new Error(`Snapshot verification failed: ${path}`);}
+  if(await hasStartupTables(db)){
+    const ids=STARTUP_COMPANIES.map(c=>c.id);
+    const bad=await db.prepare(`SELECT count(*) n FROM startup_jobs WHERE url NOT LIKE 'https://%' OR trim(title)='' OR company_id NOT IN (${ids.map(()=>'?').join(',')})`).bind(...ids).first<any>();
+    if(bad.n)throw new Error(`Snapshot has ${bad.n} malformed StartupAtlas roles; publishing stopped.`);
+    const s=await db.prepare('SELECT (SELECT count(*) FROM startup_jobs) roles,(SELECT count(*) FROM startup_companies WHERE ats IS NOT NULL) boards').first<any>();
+    console.log(JSON.stringify({startups:{roles:s.roles,boards:s.boards}}));
   }
   const payModel=JSON.parse(await readFile('data/pay-model.json','utf8'));
   if(!isPayModel(payModel))throw new Error('Pay model is missing or has an unexpected shape.');
