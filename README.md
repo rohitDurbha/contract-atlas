@@ -11,6 +11,7 @@ You can browse the live feed at **https://contract-atlas-amber.vercel.app**.
 - Shows a single listing when a company reposts the same opening under several requisition IDs.
 - Offers search, filters for company, category, work mode and country, sorting by date or pay, and saved roles that stay on the visitor's own device.
 - Reports the health of every source, including whether its last collection was complete or only partial.
+- Adds skills, seniority, a plain job title and the work mode to each role with a free LLM tier during the refresh, so the site itself never calls a model.
 - Marks sources that were read successfully but have no open roles right now with a "No open roles" badge. They are counted on their own rather than as loaded feeds, and the source directory has a button that hides or shows them. Every source is shown by default, and the choice resets when the page reloads.
 
 Every listing comes from a real public posting. The collector respects robots.txt, login walls and access restrictions, and it never invents or generates job data.
@@ -150,6 +151,7 @@ The site runs entirely on free plans. The workflow stops if the repository becom
 1. Keep this repository public so GitHub Actions minutes stay free.
 2. Store a Vercel token for the `rohitdurbha-1631` scope as the GitHub Actions secret `VERCEL_TOKEN`. The Vercel project and team IDs in the workflow are public identifiers and are not secrets.
 3. Allow GitHub Actions to write repository contents so it can commit each new snapshot.
+4. Optionally store `GROQ_API_KEY` or `GEMINI_API_KEY` as a GitHub Actions secret to turn on the LLM enrichment described below.
 
 To turn on the reliable two hour schedule, deploy the dispatcher to the Cloudflare Workers free plan.
 
@@ -159,6 +161,25 @@ To turn on the reliable two hour schedule, deploy the dispatcher to the Cloudfla
 4. After the next even hour, open the worker's `/status` page to confirm that a `workflow_dispatch` run started.
 
 The GitHub schedule stays in place as a backup. All runs share one concurrency group, so two collections never overlap.
+
+## LLM enrichment
+
+The refresh asks a free LLM tier to read each new or changed role and answer with a small JSON object that holds the skills, the seniority, a plain job title, the work mode and the hourly pay when the posting states one. Groq is tried first with `openai/gpt-oss-20b` and Gemini is the fallback with `gemini-3.1-flash-lite`. Either model can be swapped through the `ENRICH_GROQ_MODEL` and `ENRICH_GEMINI_MODEL` repository variables when a provider retires one. Answers live in the `job_enrichment` table of the snapshot, so the site and the MCP tools read plain columns and there is no AI cost at request time.
+
+To turn it on, add `GROQ_API_KEY` or `GEMINI_API_KEY` (or both) as a GitHub Actions secret. Both providers offer a free key, and the workflow passes them to the refresh step without printing them. With neither key set the refresh simply skips this step, and `.env.example` lists the same settings for local runs.
+
+The step is careful with the free quotas and with the feed itself.
+
+- Each run enriches at most 40 roles, newest postings first, and waits four seconds between calls. The `ENRICH_MAX_PER_RUN` and `ENRICH_DELAY_MS` repository variables change both numbers without a code change.
+- A role is sent again only when its title, company, location, work mode, pay or description changes, because each answer is stored with a hash of the text it was given.
+- After three failed calls in a row the run stops enriching, and a missing key or a failing provider never fails the refresh or blocks a publish.
+- Every answer is cleaned before it is saved. Labels outside the known lists become `unknown`, skill lists are trimmed to fifteen short names and hourly pay outside 5 to 1000 is dropped.
+- Answers are deleted together with their role when the snapshot is pruned.
+- `npm run verify:free` checks every stored answer against the same rules before a snapshot is published, and it stops the deploy if any row is malformed or points at a role that no longer exists.
+
+The feed, the role detail panel, `search_jobs`, `get_job`, `estimate_pay`, `match_resume` and semantic ranking all prefer the stored skills and a known work mode over what the regex parser found in the listing. Cards also show a seniority tag and the plain title when it adds something. An answer of `unknown` or an empty skill list leaves the listing exactly as the source published it, and the raw listing in the database is never rewritten.
+
+There are a few limits worth knowing about. The model can misread a posting, so enriched fields are helpful labels and should not be treated as facts from the source. `market_trends` and the pay model still train on the listed skills so their history stays consistent until most roles are enriched. A first run against the current backlog of roughly 800 feed roles takes about two days of refreshes to clear, and later runs only see new or edited roles.
 
 ## Data rules
 
