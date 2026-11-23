@@ -9,12 +9,22 @@ Already shipped on Nov 3 and 4, 2026. Fifteen dead sources were retired (43 rema
 Live link: https://contract-atlas-amber.vercel.app, deployed by Vercel on every push to main.
 
 - [ ] Confirm the first refreshes with `GROQ_API_KEY` and `GEMINI_API_KEY` set (added Nov 23, 2026) stored enrichment answers in the snapshot, and that seniority and normalized titles now show on the live site. If the provider calls fail, fix them before item 7.
+  - Nov 23. The first manual refresh with both keys stored 33 answers out of 40 attempts and `verify:free` passed. Seven calls failed on both providers, so the cause should be found from the refresh log. Seniority tags on the live cards still need a visual check.
 
 ## Bugs found on the live site
 
 Every session opens the live link first, adds anything broken here, and fixes these before the numbered items.
 
 - None logged yet.
+
+## StartupAtlas
+
+A separate tab at `/startups` for every open role at the 122 companies in the fast-growing and Breakout List sheets shared on Nov 23, 2026. It stays apart from the contract feed.
+
+- [x] a. Seed the company list, read public Ashby, Greenhouse, Lever, Workable, Gem and Teamtailor boards in the refresh, store roles in their own tables and serve them on read-only routes. The first run found boards for 84 companies and about 4,800 roles.
+- [x] b. Build the tab with its own monochrome design, filters, company directory and command palette, and link it from the contract feed.
+- [ ] c. Find boards for the 38 companies without one. Several use their own careers sites (Boom Supersonic, Stoke Space, Aven, Bitwise, Castelion, fal, Netris and others) and Radiant needs its real board, since a guessed slug belonged to a different company.
+- [ ] d. Check the live tab on a phone and a desktop after the first deploy and log anything broken under the bugs heading.
 
 ## Items
 

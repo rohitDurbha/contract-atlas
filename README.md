@@ -11,6 +11,7 @@ You can browse the live feed at **https://contract-atlas-amber.vercel.app**.
 - Shows a single listing when a company reposts the same opening under several requisition IDs.
 - Offers search, filters for company, category, work mode and country, sorting by date or pay, and saved roles that stay on the visitor's own device.
 - Reports the health of every source, including whether its last collection was complete or only partial.
+- Has a separate StartupAtlas tab that lists every open role, including full-time work, at 122 fast-growing startups without mixing them into the contract feed.
 - Adds skills, seniority, a plain job title and the work mode to each role with a free LLM tier during the refresh, so the site itself never calls a model.
 - Marks sources that were read successfully but have no open roles right now with a "No open roles" badge. They are counted on their own rather than as loaded feeds, and the source directory has a button that hides or shows them. Every source is shown by default, and the choice resets when the page reloads.
 
@@ -180,6 +181,21 @@ The step is careful with the free quotas and with the feed itself.
 The feed, the role detail panel, `search_jobs`, `get_job`, `estimate_pay`, `match_resume` and semantic ranking all prefer the stored skills and a known work mode over what the regex parser found in the listing. Cards also show a seniority tag and the plain title when it adds something. An answer of `unknown` or an empty skill list leaves the listing exactly as the source published it, and the raw listing in the database is never rewritten.
 
 There are a few limits worth knowing about. The model can misread a posting, so enriched fields are helpful labels and should not be treated as facts from the source. `market_trends` and the pay model still train on the listed skills so their history stays consistent until most roles are enriched. A first run against the current backlog of roughly 800 feed roles takes about two days of refreshes to clear, and later runs only see new or edited roles.
+
+## StartupAtlas
+
+StartupAtlas is a separate tab at `/startups` that lists every open role at 122 fast-growing startups. The companies come from two curated lists, the 32 startups that grew their teams the most in the past 30 days and the Breakout List of 92 startups grouped by headcount. These roles include full-time work, so they live in their own `startup_companies` and `startup_jobs` tables and never appear in the contract feed, its counts or its MCP tools.
+
+The refresh workflow reads each company's public job board after the contract collection finishes. It supports the read-only posting APIs of Ashby, Greenhouse, Lever, Workable, Gem and Teamtailor, which are meant for embedding on careers pages and need no key. A company's board is found in this order.
+
+1. The board named in `server/startups/companies.json`, when the source list gave one.
+2. The board stored by an earlier run.
+3. Board links on the company's own careers page, which is only read when its robots.txt allows it.
+4. A guessed board slug from the company name or domain, which is only accepted when the company name appears clearly in the board's own listings. A company whose name another firm shares can be marked `noGuess` to skip this step.
+
+A board that stops answering keeps its roles for one day, and companies with no known board are looked up again at most once a day. Every role links straight to its original posting, and a failure here never stops the contract refresh. On the first run 84 of the 122 companies had a readable public board with about 4,800 open roles between them. The rest publish jobs on their own sites or on boards the collector cannot read yet, so the tab shows their careers link instead.
+
+The tab has its own monochrome look with Instrument Serif, Geist and Geist Mono. It offers a live count of roles, the fastest growing list as a marquee and bento grid, group tabs by company size, filters for remote roles, listed pay and role family, a company directory and a command palette that opens with Ctrl or Cmd and K. It follows the system light or dark setting, remembers a manual choice in the browser and respects reduced motion. The three read-only routes behind it are `/api/startups/overview`, `/api/startups/companies` and `/api/startups/jobs`.
 
 ## Data rules
 
