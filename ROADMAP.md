@@ -1,8 +1,20 @@
 # Contract Atlas roadmap
 
-Work moves top to bottom, one step at a time. A step is ticked when it ships and an item is ticked when all of its steps are done.
+Each session finishes a whole item when it can, working top to bottom. The live site comes first, so any bug found there is fixed before the numbered items. A step is ticked when it ships and an item is ticked when all of its steps are done.
 
 Already shipped on Nov 3 and 4, 2026. Fifteen dead sources were retired (43 remain), the feed shows a 90-day contract-only window, reposted openings are collapsed, snapshot pruning brought the database from 30 MB to about 17 MB, a Cloudflare cron dispatcher keeps the two-hour refresh reliable, Vercel deploys on every code push, and the README was rewritten.
+
+## Live link
+
+Live link: https://contract-atlas-amber.vercel.app, deployed by Vercel on every push to main.
+
+- [ ] Confirm the first refreshes with `GROQ_API_KEY` and `GEMINI_API_KEY` set (added Nov 23, 2026) stored enrichment answers in the snapshot, and that seniority and normalized titles now show on the live site. If the provider calls fail, fix them before item 7.
+
+## Bugs found on the live site
+
+Every session opens the live link first, adds anything broken here, and fixes these before the numbered items.
+
+- None logged yet.
 
 ## Items
 
@@ -46,5 +58,5 @@ The MCP endpoint is live at `https://contract-atlas-amber.vercel.app/api/mcp` (s
 ## Needs Rohit
 
 - [ ] Deploy `dispatcher/` to Cloudflare Workers and add a GitHub token as described in the README deployment section.
-- [ ] Add `GROQ_API_KEY` or `GEMINI_API_KEY` as a GitHub Actions secret before item 6.
+- [x] Add `GROQ_API_KEY` or `GEMINI_API_KEY` as a GitHub Actions secret before item 6. Both were added on Nov 23, 2026.
 - [ ] List the MCP server in the official MCP Registry (item 1e). Start the Publish to MCP Registry workflow once from the Actions tab. It signs in with GitHub OIDC, so no secret is needed. Running `mcp-publisher login github` and then `mcp-publisher publish` from a laptop works too.
