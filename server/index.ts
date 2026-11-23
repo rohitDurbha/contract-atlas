@@ -3,6 +3,7 @@ const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
+import { compress } from 'hono/compress';
 import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources, sourceHealth, workModeSql } from './db.js';
 import { formatRun } from './ingestion.js';
 import type { Overview } from '../src/types.js';
@@ -41,6 +42,8 @@ app.get('/api/overview',async c=> {
   const overview:Overview={totalJobs:stats?.total||0,newToday:stats?.today||0,remoteJobs:stats?.remote||0,companyCount:stats?.companies||0,sourceCount:sourceStats.total,healthySources:sourceStats.healthy,completeSources:sourceStats.complete,partialSources:sourceStats.partial,emptySources:sourceStats.empty,lastRun:last?formatRun(last):null,nextRefreshAt:enabled&&last?new Date(Math.max(Date.parse(last.started_at)+7_200_000,Date.now())).toISOString():null,scheduleEnabled:enabled};
   return c.json(overview);
 });
+// The full startup role list is a couple of megabytes of JSON, so it is compressed.
+app.use('/api/startups/*',compress());
 // StartupAtlas has its own read-only routes, so its roles never mix with the contract feed.
 app.get('/api/startups/overview',async c=>c.json(await startupOverview(c.env.DB)));
 app.get('/api/startups/companies',async c=>c.json(await startupCompanies(c.env.DB)));

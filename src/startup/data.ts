@@ -9,7 +9,7 @@ export interface StartupCompany {
 export interface StartupJob {
   id: string; companyId: string; title: string; team: string | null; location: string; remote: boolean;
   employmentType: string | null; postedAt: string | null; firstSeenAt: string; url: string;
-  payMin: number | null; payMax: number | null; currency: string | null; payInterval: string | null; summary: string;
+  payMin: number | null; payMax: number | null; currency: string | null; payInterval: string | null;
 }
 export interface StartupOverview { companies: number; withBoards: number; roles: number; remoteRoles: number; newThisWeek: number; updatedAt: string | null }
 

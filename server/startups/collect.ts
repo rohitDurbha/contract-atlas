@@ -220,7 +220,7 @@ export interface StartupCompanyView extends Omit<StartupCompany, 'board' | 'ats'
 export interface StartupJobView {
   id: string; companyId: string; title: string; team: string | null; location: string; remote: boolean;
   employmentType: string | null; postedAt: string | null; firstSeenAt: string; url: string;
-  payMin: number | null; payMax: number | null; currency: string | null; payInterval: string | null; summary: string;
+  payMin: number | null; payMax: number | null; currency: string | null; payInterval: string | null;
 }
 export interface StartupOverview { companies: number; withBoards: number; roles: number; remoteRoles: number; newThisWeek: number; updatedAt: string | null }
 
@@ -248,11 +248,13 @@ export async function startupCompanies(db: Database): Promise<StartupCompanyView
 
 export async function startupJobs(db: Database): Promise<StartupJobView[]> {
   if (!(await hasStartupTables(db))) return [];
-  const rows = (await db.prepare('SELECT * FROM startup_jobs ORDER BY COALESCE(posted_at,first_seen_at) DESC, id').all<any>()).results;
+  // The stored snippet stays out of the response, since the page links to
+  // each posting and every byte here is sent to phones too.
+  const rows = (await db.prepare('SELECT id,company_id,title,team,location,remote,employment_type,posted_at,first_seen_at,url,pay_min,pay_max,currency,pay_interval FROM startup_jobs ORDER BY COALESCE(posted_at,first_seen_at) DESC, id').all<any>()).results;
   return rows.map(r => ({
     id: r.id, companyId: r.company_id, title: r.title, team: r.team, location: r.location, remote: r.remote === 1,
     employmentType: r.employment_type, postedAt: r.posted_at, firstSeenAt: r.first_seen_at, url: r.url,
-    payMin: r.pay_min, payMax: r.pay_max, currency: r.currency, payInterval: r.pay_interval, summary: r.summary,
+    payMin: r.pay_min, payMax: r.pay_max, currency: r.currency, payInterval: r.pay_interval,
   }));
 }
 

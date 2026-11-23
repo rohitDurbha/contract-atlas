@@ -8,7 +8,7 @@ const company = (id: string, extra: Partial<StartupCompany> = {}): StartupCompan
 const job = (id: string, companyId: string, extra: Partial<StartupJob> = {}): StartupJob => ({
   id, companyId, title: 'Software Engineer', team: null, location: 'San Francisco', remote: false, employmentType: 'Full Time',
   postedAt: '2026-11-20T00:00:00Z', firstSeenAt: '2026-11-20T00:00:00Z', url: 'https://example.com', payMin: null, payMax: null,
-  currency: null, payInterval: null, summary: '', ...extra,
+  currency: null, payInterval: null, ...extra,
 });
 
 describe('StartupAtlas view helpers', () => {
