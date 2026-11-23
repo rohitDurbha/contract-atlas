@@ -7,6 +7,7 @@ import { ensureDB, jobFeed, feedScopeSql, getFeedJob, listSources, sourceHealth,
 import { formatRun } from './ingestion.js';
 import type { Overview } from '../src/types.js';
 import type { Database } from './database.js';
+import { startupCompanies, startupJobs, startupOverview } from './startups/collect.js';
 
 // The site and the MCP endpoint are served from a read-only snapshot. Collection
 // runs in GitHub Actions, so this app exposes no write routes.
@@ -40,6 +41,10 @@ app.get('/api/overview',async c=> {
   const overview:Overview={totalJobs:stats?.total||0,newToday:stats?.today||0,remoteJobs:stats?.remote||0,companyCount:stats?.companies||0,sourceCount:sourceStats.total,healthySources:sourceStats.healthy,completeSources:sourceStats.complete,partialSources:sourceStats.partial,emptySources:sourceStats.empty,lastRun:last?formatRun(last):null,nextRefreshAt:enabled&&last?new Date(Math.max(Date.parse(last.started_at)+7_200_000,Date.now())).toISOString():null,scheduleEnabled:enabled};
   return c.json(overview);
 });
+// StartupAtlas has its own read-only routes, so its roles never mix with the contract feed.
+app.get('/api/startups/overview',async c=>c.json(await startupOverview(c.env.DB)));
+app.get('/api/startups/companies',async c=>c.json(await startupCompanies(c.env.DB)));
+app.get('/api/startups/jobs',async c=>c.json(await startupJobs(c.env.DB)));
 app.get('/api/runs',async c=> {const rows=await c.env.DB.prepare('SELECT * FROM runs ORDER BY started_at DESC LIMIT 20').all<any>();return c.json(rows.results.map(formatRun));});
 app.all('/api/*',c=>c.json({error:'API endpoint not found.'},404));
 app.all('*',c=>c.json({error:'Not found.'},404));

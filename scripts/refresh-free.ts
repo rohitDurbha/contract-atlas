@@ -5,6 +5,7 @@ import { pruneSnapshot } from '../server/prune';
 import { writeFile } from 'node:fs/promises';
 import { trainPayModel } from '../server/pay-model';
 import { enrichPending, providersFromEnv, runOptionsFromEnv } from '../server/enrichment';
+import { collectStartups } from '../server/startups/collect';
 const {db,close}=openSQLite('data/atlas.sqlite');
 try {
   await ensureDB(db);
@@ -20,11 +21,16 @@ try {
   // throws, and without GROQ_API_KEY or GEMINI_API_KEY it does nothing.
   const enrichment=await enrichPending(db,providersFromEnv(),runOptionsFromEnv());
   if(enrichment.status==='error'||enrichment.status==='stopped')console.warn(`Enrichment ${enrichment.status}; the refresh continues.`,enrichment.error??'');
+  // StartupAtlas reads public startup job boards into its own tables. It is
+  // separate from the contract feed, and a failure here never stops the refresh.
+  let startups:unknown;
+  try { startups=await collectStartups(db); }
+  catch(error) { startups={error:error instanceof Error?error.message:String(error)}; console.warn('StartupAtlas collection failed; the refresh continues.',startups); }
   await db.exec('VACUUM');
   // The pay model is refitted on every refresh so estimates follow the
   // current snapshot. Only its coefficients ship with the site.
   const payModel=await trainPayModel(db);
   await writeFile('data/pay-model.json',JSON.stringify(payModel)+'\n');
   const payRoles=Object.fromEntries(Object.entries(payModel.currencies).map(([currency,m])=>[currency,m.roles]));
-  console.log(JSON.stringify({...run,pruned,duplicates,payRoles,enrichment}));
+  console.log(JSON.stringify({...run,pruned,duplicates,payRoles,enrichment,startups}));
 }finally{close();}
