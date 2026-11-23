@@ -5,7 +5,7 @@ import { makeJob } from '../server/normalize';
 import { pruneSnapshot } from '../server/prune';
 import { SOURCES } from '../server/sources';
 import {
-  ENRICH_DEFAULT_DELAY_MS, ENRICH_DEFAULT_LIMIT, ENRICHMENT_MODELS, enrichPending, enrichmentInput, inputHash, loadEnrichment, parseEnrichment,
+  ENRICH_DEFAULT_DELAY_MS, ENRICH_DEFAULT_LIMIT, ENRICHMENT_MODELS, enrichPending, enrichmentInput, enrichmentProblems, inputHash, loadEnrichment, parseEnrichment,
   pendingEnrichment, providersFromEnv, requestEnrichment, runOptionsFromEnv, saveEnrichment,
 } from '../server/enrichment';
 
@@ -226,5 +226,60 @@ describe('enriching pending roles during a refresh', () => {
     await pruneSnapshot(db, now);
     expect(await loadEnrichment(db, id('a'))).not.toBeNull();
     expect(await loadEnrichment(db, id('old'))).toBeNull();
+  }));
+});
+
+describe('checking stored enrichment before publishing', () => {
+  const groq = { name: 'groq' as const, model: 'm1', apiKey: 'q' };
+  const roleId = `${SOURCES[0].id}:checked`;
+
+  async function withSnapshot(test: (db: ReturnType<typeof openSQLite>['db']) => Promise<void>) {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      await jobStatement(db, makeJob(SOURCES[0], { sourceJobId: 'checked', title: 'Data Engineer', applyUrl: 'https://example.com/jobs/checked', description: 'Python' }, new Date().toISOString())!).run();
+      await test(db);
+    } finally {
+      close();
+    }
+  }
+
+  it('accepts answers saved through the normal path', () => withSnapshot(async db => {
+    await saveEnrichment(db, roleId, inputHash('text'), { enrichment: parseEnrichment(JSON.stringify(good))!, provider: groq });
+    expect(await enrichmentProblems(db)).toEqual([]);
+  }));
+
+  it('treats a snapshot without the table as having nothing to check', () => withSnapshot(async db => {
+    await db.exec('DROP TABLE job_enrichment');
+    expect(await enrichmentProblems(db)).toEqual([]);
+  }));
+
+  it('reports every broken field on a hand edited row', () => withSnapshot(async db => {
+    await db.prepare(`INSERT INTO job_enrichment(job_id,input_hash,provider,model,skills,seniority,normalized_title,remote,pay_min,pay_max,enriched_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(roleId, 'short', 'openai', ' ', '{"Python":1}', 'staff', 'x'.repeat(121), 'Remote', 2, 1500, 'yesterday').run();
+    const problems = (await enrichmentProblems(db)).map(p => p.problem);
+    expect(problems).toEqual([
+      'input hash is not a sha256 hex digest',
+      'unknown provider "openai"',
+      'empty model name',
+      'skills is not a JSON list',
+      'unknown seniority "staff"',
+      'unknown remote label "Remote"',
+      'normalized title is missing or too long',
+      'pay_min is outside 5 to 1000 per hour',
+      'pay_max is outside 5 to 1000 per hour',
+      'enriched_at is not a date',
+    ]);
+  }));
+
+  it('flags orphaned rows, untidy skill lists and reversed pay', () => withSnapshot(async db => {
+    const enrichment = parseEnrichment(JSON.stringify(good))!;
+    await saveEnrichment(db, 'gone:1', inputHash('a'), { enrichment, provider: groq });
+    await saveEnrichment(db, roleId, inputHash('b'), { enrichment: { ...enrichment, skills: ['Python', ' '], hourlyPayMin: 90, hourlyPayMax: 60 }, provider: groq });
+    expect(await enrichmentProblems(db)).toEqual([
+      { jobId: 'gone:1', problem: 'no matching role' },
+      { jobId: roleId, problem: 'skills list has empty, long or non-text entries or too many entries' },
+      { jobId: roleId, problem: 'pay_min is above pay_max' },
+    ]);
   }));
 });
