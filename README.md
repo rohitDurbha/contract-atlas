@@ -172,6 +172,7 @@ To turn it on, add `GROQ_API_KEY` or `GEMINI_API_KEY` (or both) as a GitHub Acti
 The step is careful with the free quotas and with the feed itself.
 
 - Each run enriches at most 40 roles, newest postings first, and waits four seconds between calls. The `ENRICH_MAX_PER_RUN` and `ENRICH_DELAY_MS` repository variables change both numbers without a code change.
+- Calls are sized for the free tiers. The prompt sends the first 2,000 characters of a description plus any later sentences that mention pay, Groq's `gpt-oss-20b` runs with low reasoning effort, and both providers stop at 600 output tokens. Groq is held under 6,500 tokens a minute and 12,000 tokens a run, which spreads its 200,000 tokens a day over about 14 refreshes, and Gemini takes the remaining calls once that is spent. Each run prints the tokens each provider reported and the reasons any call failed.
 - A role is sent again only when its title, company, location, work mode, pay or description changes, because each answer is stored with a hash of the text it was given.
 - After three failed calls in a row the run stops enriching, and a missing key or a failing provider never fails the refresh or blocks a publish.
 - Every answer is cleaned before it is saved. Labels outside the known lists become `unknown`, skill lists are trimmed to fifteen short names and hourly pay outside 5 to 1000 is dropped.

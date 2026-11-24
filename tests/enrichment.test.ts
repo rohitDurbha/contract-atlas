@@ -5,8 +5,9 @@ import { makeJob } from '../server/normalize';
 import { pruneSnapshot } from '../server/prune';
 import { SOURCES } from '../server/sources';
 import {
-  ENRICH_DEFAULT_DELAY_MS, ENRICH_DEFAULT_LIMIT, ENRICHMENT_MODELS, enrichPending, enrichmentInput, enrichmentProblems, inputHash, loadEnrichment, parseEnrichment,
-  pendingEnrichment, providersFromEnv, requestEnrichment, runOptionsFromEnv, saveEnrichment,
+  ENRICH_DEFAULT_DELAY_MS, ENRICH_DEFAULT_LIMIT, ENRICHMENT_MODELS, MAX_COMPLETION_TOKENS, PROMPT_DESCRIPTION_CHARS, TokenBudget, enrichPending, enrichmentInput,
+  enrichmentPrompt, enrichmentProblems, estimateTokens, inputHash, loadEnrichment, parseEnrichment, pendingEnrichment, promptDescription, providersFromEnv,
+  requestEnrichment, runOptionsFromEnv, saveEnrichment,
 } from '../server/enrichment';
 
 const role = {
@@ -49,6 +50,54 @@ describe('enrichment input', () => {
   it('hashes the same text the same way and changed text differently', () => {
     expect(inputHash(enrichmentInput(role))).toBe(inputHash(enrichmentInput({ ...role })));
     expect(inputHash(enrichmentInput(role))).not.toBe(inputHash(enrichmentInput({ ...role, title: 'Data Engineer' })));
+  });
+});
+
+describe('keeping prompts inside free tier limits', () => {
+  it('sends a short description but keeps later sentences about pay', () => {
+    const long = 'Build data pipelines in Python. '.repeat(120) + 'Benefits include PTO. The pay rate is $65 per hour on W2. We value teamwork.';
+    const sent = promptDescription(long);
+    expect(sent.length).toBeLessThan(PROMPT_DESCRIPTION_CHARS + 450);
+    expect(sent.startsWith(long.slice(0, PROMPT_DESCRIPTION_CHARS))).toBe(true);
+    expect(sent).toContain('... The pay rate is $65 per hour on W2.');
+    expect(sent).not.toContain('Benefits');
+    expect(promptDescription('Short text.')).toBe('Short text.');
+    expect(promptDescription('x'.repeat(3000))).toBe('x'.repeat(PROMPT_DESCRIPTION_CHARS));
+  });
+
+  it('hashes the same text as before, so a shorter prompt does not redo stored answers', () => {
+    const job = { ...role, description: '<p>' + 'Spark and Airflow work. '.repeat(300) + '</p>' };
+    expect(enrichmentInput(job).length).toBeGreaterThan(6000);
+    expect(enrichmentPrompt(job).length).toBeLessThan(2300);
+    expect(enrichmentPrompt(role)).toBe(enrichmentInput(role));
+  });
+
+  it('estimates the tokens a call can use', () => {
+    expect(estimateTokens('x'.repeat(400))).toBeGreaterThan(100 + MAX_COMPLETION_TOKENS);
+    expect(estimateTokens('x'.repeat(2400))).toBeLessThan(1500);
+  });
+
+  it('paces calls inside the tokens a minute and stops at the run allowance', async () => {
+    let now = 0;
+    const waits: number[] = [];
+    const budget = new TokenBudget(
+      { groq: { tokensPerMinute: 1000, tokensPerRun: 2500 }, gemini: { tokensPerMinute: 10_000, tokensPerRun: 10_000 } },
+      () => now,
+      async ms => { waits.push(ms); now += ms; },
+    );
+    expect(await budget.reserve('groq', 600)).toBe(true);
+    budget.record('groq', 600);
+    now = 10_000;
+    // 600 + 600 is over 1000 a minute, so this waits until the first call is a minute old.
+    expect(await budget.reserve('groq', 600)).toBe(true);
+    expect(waits).toEqual([50_050]);
+    budget.record('groq', 600);
+    expect(await budget.reserve('gemini', 600)).toBe(true);
+    budget.record('groq', 900);
+    // 2100 used, and 600 more would pass the 2500 run allowance.
+    expect(await budget.reserve('groq', 600)).toBe(false);
+    expect(await budget.reserve('groq', 300)).toBe(true);
+    expect(budget.used).toEqual({ groq: 2100 });
   });
 });
 
@@ -95,6 +144,10 @@ describe('requesting enrichment', () => {
     const body = JSON.parse(String(calls[0].init.body));
     expect(body.model).toBe('m1');
     expect(body.response_format.type).toBe('json_schema');
+    expect(body.max_completion_tokens).toBe(MAX_COMPLETION_TOKENS);
+    expect(body.reasoning_effort).toBeUndefined();
+    await requestEnrichment([{ ...groq, model: 'openai/gpt-oss-20b' }], 'input', { fetch });
+    expect(JSON.parse(String(calls[1].init.body)).reasoning_effort).toBe('low');
     expect(body.messages[1]).toEqual({ role: 'user', content: 'input' });
   });
 
@@ -108,6 +161,24 @@ describe('requesting enrichment', () => {
     const result = await requestEnrichment([groq, gemini], 'input', { fetch, sleep: noSleep });
     expect(result?.provider).toBe(gemini);
     expect(urls[2]).toBe('https://generativelanguage.googleapis.com/v1beta/models/m2:generateContent');
+  });
+
+  it('caps Gemini output, records reported tokens and skips a provider whose run allowance is spent', async () => {
+    const bodies: any[] = [];
+    const fetch = (async (url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      if (url.includes('groq')) return reply(200, { choices: [{ message: { content: JSON.stringify(good) } }], usage: { total_tokens: 812 } });
+      return reply(200, { candidates: [{ content: { parts: [{ text: JSON.stringify(good) }] } }], usageMetadata: { totalTokenCount: 640 } });
+    }) as unknown as typeof globalThis.fetch;
+    const budget = new TokenBudget({ groq: { tokensPerMinute: 100_000, tokensPerRun: 1500 }, gemini: { tokensPerMinute: 100_000, tokensPerRun: 100_000 } }, () => 0, async () => {});
+    const reasons: string[] = [];
+    expect((await requestEnrichment([groq, gemini], 'input', { fetch, budget }))?.provider).toBe(groq);
+    expect(budget.used).toEqual({ groq: 812 });
+    // 812 used, and the next estimate would pass 1500, so Gemini answers.
+    expect((await requestEnrichment([groq, gemini], 'input', { fetch, budget, onFailure: r => reasons.push(r) }))?.provider).toBe(gemini);
+    expect(reasons).toEqual(['groq: run token budget used']);
+    expect(bodies[1].generationConfig.maxOutputTokens).toBe(MAX_COMPLETION_TOKENS);
+    expect(budget.used).toEqual({ groq: 812, gemini: 640 });
   });
 
   it('returns null when every provider fails or answers badly', async () => {
@@ -279,7 +350,9 @@ describe('enriching pending roles during a refresh', () => {
     const flaky = (async () => (++n === 2 ? reply(200, { choices: [{ message: { content: 'nope' } }] }) : answer())) as unknown as typeof globalThis.fetch;
     const done = await enrichPending(db, [groq], { fetch: flaky, sleep: noSleep, now });
     expect(done).toMatchObject({ status: 'done', attempted: 5, enriched: 4, failed: 1, failures: { 'groq: answer did not match the schema': 1 } });
-    expect((await enrichPending(db, [groq], { fetch: answer as unknown as typeof globalThis.fetch, sleep: noSleep, now })).failures).toBeUndefined();
+    const clean = await enrichPending(db, [groq], { fetch: answer as unknown as typeof globalThis.fetch, sleep: noSleep, now });
+    expect(clean.failures).toBeUndefined();
+    expect(clean.tokens).toEqual({ groq: expect.any(Number) });
 
     await db.exec('DROP TABLE job_enrichment');
     expect(await enrichPending(db, [groq], { fetch: flaky, sleep: noSleep, now })).toMatchObject({ status: 'error', attempted: 0 });

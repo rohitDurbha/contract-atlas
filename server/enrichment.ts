@@ -32,8 +32,30 @@ export const REMOTE = ['remote', 'hybrid', 'onsite', 'unknown'] as const;
 const HOURLY_FLOOR = 5;
 const HOURLY_CEILING = 1000;
 const MAX_SKILLS = 15;
-// Long descriptions are cut so one role stays well inside free tier token limits.
-const MAX_DESCRIPTION_CHARS = 6000;
+// Change detection reads this much of the description, so a role is
+// enriched again only when this part of its text changes.
+const HASHED_DESCRIPTION_CHARS = 6000;
+// The prompt sends less. Skills, seniority and the title are almost always
+// near the top of a posting, and sentences that mention pay further down are
+// kept, so a call costs about 700 input tokens at most instead of 1,700.
+export const PROMPT_DESCRIPTION_CHARS = 2000;
+const PAY_EXCERPT_CHARS = 400;
+
+// Free tier limits, from the Groq rate limits page for openai/gpt-oss-20b
+// (30 requests and 8,000 tokens a minute, 1,000 requests and 200,000 tokens a
+// day) and the usual Gemini Flash Lite free tier (15 requests a minute and a
+// large token allowance). tokensPerMinute is kept under the real limit, and
+// tokensPerRun spreads the Groq daily allowance over about 14 refreshes a day,
+// counting the two hourly schedule and code pushes. A provider whose run
+// budget is spent is skipped for the rest of that run.
+export const PROVIDER_LIMITS: Record<ProviderName, { tokensPerMinute: number; tokensPerRun: number }> = {
+  groq: { tokensPerMinute: 6500, tokensPerRun: 12_000 },
+  gemini: { tokensPerMinute: 200_000, tokensPerRun: 60_000 },
+};
+// Upper bound on the tokens a call writes, reasoning included. Groq is held to
+// it with max_completion_tokens and low reasoning effort, and Gemini with
+// maxOutputTokens. The answer itself is under 150 tokens.
+export const MAX_COMPLETION_TOKENS = 600;
 
 export interface Enrichment {
   skills: string[];
@@ -60,7 +82,41 @@ function plainText(html: string): string {
 
 // The role text that goes into the prompt. Only these fields are sent, so a
 // change to anything else (such as last_seen_at) does not trigger new calls.
-export function enrichmentInput(job: Pick<Job, 'title' | 'company' | 'location' | 'workMode' | 'description' | 'payMin' | 'payMax' | 'payPeriod' | 'currency'>): string {
+type InputJob = Pick<Job, 'title' | 'company' | 'location' | 'workMode' | 'description' | 'payMin' | 'payMax' | 'payPeriod' | 'currency'>;
+
+const PAY_SENTENCE = /\$\s?\d|\d\s?(?:usd|eur|gbp)\b|per hour|\/\s?h(?:ou)?r\b|hourly|salary|compensation|pay rate|rate of pay|w-?2 rate|c2c rate/i;
+
+// The description the prompt sends. A long one keeps its opening and any
+// later sentences that mention pay, so the model can still read the rate.
+export function promptDescription(text: string, limit = PROMPT_DESCRIPTION_CHARS): string {
+  if (text.length <= limit) return text;
+  const head = text.slice(0, limit);
+  const pay: string[] = [];
+  let used = 0;
+  for (const sentence of text.slice(limit).split(/(?<=[.!?;])\s+/)) {
+    if (!PAY_SENTENCE.test(sentence)) continue;
+    const piece = sentence.trim().slice(0, PAY_EXCERPT_CHARS - used);
+    if (!piece) break;
+    pay.push(piece);
+    used += piece.length;
+    if (used >= PAY_EXCERPT_CHARS) break;
+  }
+  return pay.length ? `${head} ... ${pay.join(' ')}` : head;
+}
+
+// The text that decides whether a role needs a new answer. It is the same
+// text earlier versions sent, so shortening the prompt did not make every
+// stored answer look out of date.
+export function enrichmentInput(job: InputJob): string {
+  return roleText(job, plainText(job.description || '').slice(0, HASHED_DESCRIPTION_CHARS));
+}
+
+// The text the prompt sends for a role.
+export function enrichmentPrompt(job: InputJob): string {
+  return roleText(job, promptDescription(plainText(job.description || '')));
+}
+
+function roleText(job: InputJob, description: string): string {
   const pay = job.payMin != null || job.payMax != null
     ? `${job.payMin ?? ''}-${job.payMax ?? ''} ${job.currency ?? ''} per ${job.payPeriod ?? 'unknown period'}`
     : 'not listed';
@@ -70,7 +126,7 @@ export function enrichmentInput(job: Pick<Job, 'title' | 'company' | 'location' 
     `Location: ${job.location}`,
     `Listed work mode: ${job.workMode}`,
     `Listed pay: ${pay}`,
-    `Description: ${plainText(job.description || '').slice(0, MAX_DESCRIPTION_CHARS)}`,
+    `Description: ${description}`,
   ].join('\n');
 }
 
@@ -201,7 +257,9 @@ function failureReason(provider: EnrichmentProvider, error: unknown): string {
   return `${provider.name}: ${message}`;
 }
 
-async function callGroq(provider: EnrichmentProvider, input: string, fetchImpl: Fetch, signal: AbortSignal): Promise<string> {
+interface CallResult { text: string; tokens: number | null }
+
+async function callGroq(provider: EnrichmentProvider, input: string, fetchImpl: Fetch, signal: AbortSignal): Promise<CallResult> {
   const response = await fetchImpl('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     signal,
@@ -209,16 +267,24 @@ async function callGroq(provider: EnrichmentProvider, input: string, fetchImpl: 
     body: JSON.stringify({
       model: provider.model,
       temperature: 0,
+      max_completion_tokens: MAX_COMPLETION_TOKENS,
+      // gpt-oss thinks before answering and those tokens count against the
+      // free tier, so a simple extraction asks for as little as possible.
+      ...(/gpt-oss/.test(provider.model) ? { reasoning_effort: 'low' } : {}),
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: input }],
       response_format: { type: 'json_schema', json_schema: { name: 'job_enrichment', schema: RESPONSE_SCHEMA } },
     }),
   });
   if (!response.ok) throw await failed(response);
-  const data = await response.json() as { choices?: { message?: { content?: string } }[] };
-  return data.choices?.[0]?.message?.content ?? '';
+  const data = await response.json() as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
+  return { text: data.choices?.[0]?.message?.content ?? '', tokens: tokenCount(data.usage?.total_tokens) };
 }
 
-async function callGemini(provider: EnrichmentProvider, input: string, fetchImpl: Fetch, signal: AbortSignal): Promise<string> {
+function tokenCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+async function callGemini(provider: EnrichmentProvider, input: string, fetchImpl: Fetch, signal: AbortSignal): Promise<CallResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(provider.model)}:generateContent`;
   const response = await fetchImpl(url, {
     method: 'POST',
@@ -227,12 +293,55 @@ async function callGemini(provider: EnrichmentProvider, input: string, fetchImpl
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: input }] }],
-      generationConfig: { temperature: 0, responseMimeType: 'application/json', responseJsonSchema: RESPONSE_SCHEMA },
+      generationConfig: { temperature: 0, maxOutputTokens: MAX_COMPLETION_TOKENS, responseMimeType: 'application/json', responseJsonSchema: RESPONSE_SCHEMA },
     }),
   });
   if (!response.ok) throw await failed(response);
-  const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-  return data.candidates?.[0]?.content?.parts?.map(p => p.text ?? '').join('') ?? '';
+  const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { totalTokenCount?: number } };
+  return { text: data.candidates?.[0]?.content?.parts?.map(p => p.text ?? '').join('') ?? '', tokens: tokenCount(data.usageMetadata?.totalTokenCount) };
+}
+
+// A rough count before the call, about four characters a token, plus the
+// most the answer can use. Used for pacing until the provider reports the
+// real figure.
+export function estimateTokens(input: string): number {
+  return Math.ceil((SYSTEM_PROMPT.length + input.length) / 4) + MAX_COMPLETION_TOKENS;
+}
+
+// Keeps each provider inside its tokens per minute and its share of the daily
+// allowance for one run. Calls are recorded with the tokens the provider
+// reports, or the estimate when it reports none.
+export class TokenBudget {
+  private readonly calls = new Map<ProviderName, { at: number; tokens: number }[]>();
+  readonly used: Partial<Record<ProviderName, number>> = {};
+  constructor(
+    private readonly limits = PROVIDER_LIMITS,
+    private readonly clock: () => number = Date.now,
+    private readonly sleep: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  ) {}
+
+  // Waits until the call fits in the last minute's allowance. Returns false
+  // without waiting when the run allowance would be exceeded.
+  async reserve(provider: ProviderName, estimate: number): Promise<boolean> {
+    const limit = this.limits[provider];
+    if ((this.used[provider] ?? 0) + estimate > limit.tokensPerRun) return false;
+    const calls = this.calls.get(provider) ?? [];
+    this.calls.set(provider, calls);
+    for (;;) {
+      const now = this.clock();
+      while (calls.length && calls[0].at <= now - 60_000) calls.shift();
+      const recent = calls.reduce((sum, c) => sum + c.tokens, 0);
+      if (!calls.length || recent + estimate <= limit.tokensPerMinute) return true;
+      await this.sleep(calls[0].at + 60_000 - now + 50);
+    }
+  }
+
+  record(provider: ProviderName, tokens: number): void {
+    const calls = this.calls.get(provider) ?? [];
+    calls.push({ at: this.clock(), tokens });
+    this.calls.set(provider, calls);
+    this.used[provider] = (this.used[provider] ?? 0) + tokens;
+  }
 }
 
 export interface EnrichResult { enrichment: Enrichment; provider: EnrichmentProvider }
@@ -243,14 +352,29 @@ export interface EnrichResult { enrichment: Enrichment; provider: EnrichmentProv
 // so a refresh can say why calls failed.
 // A rate limited (429) or busy (503) provider is tried once more after the
 // wait it asks for, up to MAX_RETRY_WAIT_MS, before moving to the next one.
-export async function requestEnrichment(providers: EnrichmentProvider[], input: string, options: { fetch?: Fetch; timeoutMs?: number; onFailure?: (reason: string) => void; sleep?: (ms: number) => Promise<void> } = {}): Promise<EnrichResult | null> {
+export async function requestEnrichment(providers: EnrichmentProvider[], input: string, options: { fetch?: Fetch; timeoutMs?: number; onFailure?: (reason: string) => void; sleep?: (ms: number) => Promise<void>; budget?: TokenBudget } = {}): Promise<EnrichResult | null> {
   const fetchImpl = options.fetch ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  const estimate = estimateTokens(input);
   for (const provider of providers) {
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (options.budget && !(await options.budget.reserve(provider.name, estimate))) {
+        options.onFailure?.(`${provider.name}: run token budget used`);
+        break;
+      }
       try {
         const signal = AbortSignal.timeout(options.timeoutMs ?? 30_000);
-        const text = provider.name === 'groq' ? await callGroq(provider, input, fetchImpl, signal) : await callGemini(provider, input, fetchImpl, signal);
+        let call: CallResult;
+        try {
+          call = provider.name === 'groq' ? await callGroq(provider, input, fetchImpl, signal) : await callGemini(provider, input, fetchImpl, signal);
+        } catch (error) {
+          // A refused call still counts toward the minute, since providers
+          // count the request. It is recorded at the estimate.
+          options.budget?.record(provider.name, error instanceof ProviderHttpError ? Math.min(estimate, 200) : estimate);
+          throw error;
+        }
+        options.budget?.record(provider.name, call.tokens ?? estimate);
+        const text = call.text;
         const enrichment = parseEnrichment(text);
         if (enrichment) return { enrichment, provider };
         options.onFailure?.(`${provider.name}: ${text.trim() ? 'answer did not match the schema' : 'empty answer'}`);
@@ -282,7 +406,9 @@ export async function loadEnrichment(db: Database, jobId: string): Promise<(Enri
   };
 }
 
-export interface PendingEnrichment { jobId: string; input: string; hash: string }
+// input is the change detection text the hash is taken from, and prompt is
+// the shorter text actually sent.
+export interface PendingEnrichment { jobId: string; input: string; prompt: string; hash: string }
 
 // Feed roles with no stored answer, or whose prompt text changed since they
 // were enriched. Newest postings come first, so a capped run spends its calls
@@ -294,9 +420,10 @@ export async function pendingEnrichment(db: Database, now = new Date()): Promise
     ORDER BY posted_at DESC, id`).bind(...ids).all<any>();
   const out: PendingEnrichment[] = [];
   for (const row of rows.results) {
-    const input = enrichmentInput(hydrate(row));
+    const job = hydrate(row);
+    const input = enrichmentInput(job);
     const hash = inputHash(input);
-    if (stored.get(row.id) !== hash) out.push({ jobId: row.id, input, hash });
+    if (stored.get(row.id) !== hash) out.push({ jobId: row.id, input, prompt: enrichmentPrompt(job), hash });
   }
   return out;
 }
@@ -357,6 +484,7 @@ export interface EnrichRunOptions {
   fetch?: Fetch;
   sleep?: (ms: number) => Promise<void>;
   now?: Date;
+  budget?: TokenBudget;
 }
 
 export interface EnrichRunResult {
@@ -369,6 +497,8 @@ export interface EnrichRunResult {
   // How often each provider failed and why, for example
   // {"groq: HTTP 429 rate_limit_exceeded": 2}. Left out when nothing failed.
   failures?: Record<string, number>;
+  // Tokens each provider reported using in this run.
+  tokens?: Partial<Record<ProviderName, number>>;
   error?: string;
 }
 
@@ -397,6 +527,7 @@ export async function enrichPending(db: Database, providers: EnrichmentProvider[
     result.failures ??= {};
     result.failures[reason] = (result.failures[reason] ?? 0) + 1;
   };
+  const budget = options.budget ?? new TokenBudget(PROVIDER_LIMITS, Date.now, sleep);
   try {
     const pending = await pendingEnrichment(db, options.now);
     result.pending = pending.length;
@@ -405,7 +536,7 @@ export async function enrichPending(db: Database, providers: EnrichmentProvider[
     for (const role of pending.slice(0, limit)) {
       if (result.attempted > 0 && delayMs > 0) await sleep(delayMs);
       result.attempted++;
-      const answer = await requestEnrichment(providers, role.input, { fetch: options.fetch, onFailure: countFailure, sleep });
+      const answer = await requestEnrichment(providers, role.prompt, { fetch: options.fetch, onFailure: countFailure, sleep, budget });
       if (answer) {
         await saveEnrichment(db, role.jobId, role.hash, answer, options.now);
         result.enriched++;
@@ -419,5 +550,6 @@ export async function enrichPending(db: Database, providers: EnrichmentProvider[
     result.status = 'error';
     result.error = error instanceof Error ? error.message : String(error);
   }
+  if (Object.keys(budget.used).length) result.tokens = { ...budget.used };
   return result;
 }
