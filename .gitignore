@@ -12,3 +12,4 @@ test-results/
 data/*-journal
 data/*-wal
 data/*-shm
+.cache/

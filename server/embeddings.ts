@@ -170,3 +170,69 @@ export async function semanticSearch(db: Database, query: ArrayLike<number>, opt
   scored.sort((a, b) => b.similarity - a.similarity || (b.job.postedAt ?? '').localeCompare(a.job.postedAt ?? ''));
   return { rolesCompared: scored.length, rolesWithoutVectors: missing, matches: scored.slice(0, limit) };
 }
+
+// Enough for the whole feed in one run, so a first run or a model change
+// catches up at once. bge-small embeds a few dozen roles a second on the
+// Actions runner.
+export const EMBED_DEFAULT_LIMIT = 1500;
+const EMBED_BATCH = 64;
+
+export interface EmbedRunOptions {
+  limit?: number;
+  now?: Date;
+}
+
+export interface EmbedRunResult {
+  status: 'skipped' | 'done' | 'error';
+  model: string;
+  pending: number;
+  embedded: number;
+  durationMs: number;
+  error?: string;
+}
+
+// Reads the per-run cap from EMBED_MAX_PER_RUN, falling back to the default
+// when it is missing or not a whole number.
+export function embedLimitFromEnv(env: Record<string, string | undefined> = process.env): number {
+  const value = env.EMBED_MAX_PER_RUN;
+  const n = Number(value);
+  return value != null && value.trim() !== '' && Number.isInteger(n) && n >= 0 ? n : EMBED_DEFAULT_LIMIT;
+}
+
+// Embeds up to `limit` feed roles that are new, edited or embedded by another
+// model. The model is loaded only when something is pending, and the run
+// never throws. A model that cannot download or load, or returns vectors of
+// the wrong size, is reported in the result, so the refresh still publishes
+// and the roles stay pending for the next run. Vectors already saved in an
+// interrupted run are kept, since each one matches its own role text.
+export async function embedPending(db: Database, loadEmbedder: () => Promise<Embedder>, options: EmbedRunOptions = {}): Promise<EmbedRunResult> {
+  const started = Date.now();
+  const result: EmbedRunResult = { status: 'skipped', model: EMBEDDING_MODEL.name, pending: 0, embedded: 0, durationMs: 0 };
+  try {
+    const pending = await pendingEmbeddings(db, EMBEDDING_MODEL.name, options.now);
+    result.pending = pending.length;
+    const todo = pending.slice(0, options.limit ?? EMBED_DEFAULT_LIMIT);
+    if (todo.length) {
+      const embedder = await loadEmbedder();
+      if (embedder.model !== EMBEDDING_MODEL.name || embedder.dimensions !== EMBEDDING_MODEL.dimensions) {
+        throw new Error(`The embedder is ${embedder.model} with ${embedder.dimensions} values, not ${EMBEDDING_MODEL.name} with ${EMBEDDING_MODEL.dimensions}.`);
+      }
+      for (let i = 0; i < todo.length; i += EMBED_BATCH) {
+        const batch = todo.slice(i, i + EMBED_BATCH);
+        const vectors = await embedder.embedPassages(batch.map(p => p.text));
+        if (vectors.length !== batch.length) throw new Error(`The model returned ${vectors.length} vectors for ${batch.length} roles.`);
+        const bad = vectors.find(v => v.length !== EMBEDDING_MODEL.dimensions || !Array.from(v).every(Number.isFinite) || !v.some(x => x !== 0));
+        if (bad) throw new Error(`The model returned an unusable vector with ${bad.length} values.`);
+        const at = options.now ?? new Date();
+        for (let j = 0; j < batch.length; j++) await saveEmbedding(db, batch[j].jobId, batch[j].hash, EMBEDDING_MODEL.name, vectors[j], at);
+        result.embedded += batch.length;
+      }
+    }
+    result.status = todo.length ? 'done' : 'skipped';
+  } catch (error) {
+    result.status = 'error';
+    result.error = (error instanceof Error ? error.message : String(error)).split('\n')[0].slice(0, 200);
+  }
+  result.durationMs = Date.now() - started;
+  return result;
+}

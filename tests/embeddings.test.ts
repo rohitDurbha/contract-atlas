@@ -6,8 +6,8 @@ import { makeJob } from '../server/normalize';
 import { pruneSnapshot } from '../server/prune';
 import { SOURCES } from '../server/sources';
 import {
-  EMBEDDING_MODEL, decodeVector, dot, embeddingHash, embeddingText, encodeVector, normalize, pendingEmbeddings, saveEmbedding, semanticSearch,
-  type Embedder,
+  EMBED_DEFAULT_LIMIT, EMBEDDING_MODEL, QUERY_PREFIX, decodeVector, dot, embedLimitFromEnv, embedPending as embedPendingRoles, embeddingHash, embeddingText,
+  encodeVector, normalize, pendingEmbeddings, saveEmbedding, semanticSearch, type Embedder,
 } from '../server/embeddings';
 
 const now = new Date('2026-11-19T12:00:00.000Z');
@@ -140,4 +140,84 @@ describe('older snapshots', () => {
     expect(table).toBe('job_embeddings');
     raw.close();
   });
+});
+
+describe('embedding pending roles during a refresh', () => {
+  const id = (key: string) => `${SOURCES[0].id}:${key}`;
+  // The topic model padded to the real model's size, so the run accepts it.
+  const padded = (text: string) => { const v = new Float32Array(EMBEDDING_MODEL.dimensions); v.set(topicVector(text)); return v; };
+  function realSized(overrides: Partial<Embedder> = {}): Embedder & { calls: string[][] } {
+    const calls: string[][] = [];
+    return {
+      model: EMBEDDING_MODEL.name, dimensions: EMBEDDING_MODEL.dimensions, calls,
+      async embedPassages(texts) { calls.push(texts); return texts.map(padded); },
+      async embedQuery(text) { return padded(QUERY_PREFIX + text); },
+      ...overrides,
+    };
+  }
+
+  async function withRoles(count: number, test: (db: ReturnType<typeof openSQLite>['db']) => Promise<void>) {
+    const { db, close } = openSQLite(':memory:');
+    try {
+      await ensureDB(db);
+      await db.prepare('DELETE FROM jobs').run();
+      for (let i = 0; i < count; i++) {
+        await jobStatement(db, makeJob(SOURCES[0], { sourceJobId: 'r' + i, title: 'Data Engineer ' + i, applyUrl: 'https://example.com/jobs/r' + i, postedAt: daysAgo(1), description: 'Build data pipelines.' }, now.toISOString())!).run();
+      }
+      await test(db);
+    } finally {
+      close();
+    }
+  }
+
+  it('reads the cap from the environment with a safe default', () => {
+    expect(embedLimitFromEnv({})).toBe(EMBED_DEFAULT_LIMIT);
+    expect(embedLimitFromEnv({ EMBED_MAX_PER_RUN: '25' })).toBe(25);
+    expect(embedLimitFromEnv({ EMBED_MAX_PER_RUN: 'lots' })).toBe(EMBED_DEFAULT_LIMIT);
+    expect(embedLimitFromEnv({ EMBED_MAX_PER_RUN: '-1' })).toBe(EMBED_DEFAULT_LIMIT);
+  });
+
+  it('embeds every pending role in batches, then has nothing left and does not load the model', () => withRoles(70, async db => {
+    const embedder = realSized();
+    let loads = 0;
+    const load = async () => { loads++; return embedder; };
+    const first = await embedPendingRoles(db, load, { now });
+    expect(first).toMatchObject({ status: 'done', model: EMBEDDING_MODEL.name, pending: 70, embedded: 70 });
+    expect(embedder.calls.map(c => c.length)).toEqual([64, 6]);
+    const stored = await db.prepare('SELECT COUNT(*) AS n, MIN(dimensions) AS d, MIN(model) AS m FROM job_embeddings').first<any>();
+    expect(stored).toEqual({ n: 70, d: EMBEDDING_MODEL.dimensions, m: EMBEDDING_MODEL.name });
+
+    const second = await embedPendingRoles(db, load, { now });
+    expect(second).toMatchObject({ status: 'skipped', pending: 0, embedded: 0 });
+    expect(loads).toBe(1);
+
+    // Stored vectors are found by semantic search for the same model.
+    const found = await semanticSearch(db, await embedder.embedQuery('data pipelines'), { now });
+    expect(found.rolesCompared).toBe(70);
+    expect(found.rolesWithoutVectors).toBe(0);
+  }));
+
+  it('respects the cap and picks up the rest on the next run', () => withRoles(5, async db => {
+    expect(await embedPendingRoles(db, async () => realSized(), { now, limit: 2 })).toMatchObject({ status: 'done', pending: 5, embedded: 2 });
+    expect(await embedPendingRoles(db, async () => realSized(), { now, limit: 0 })).toMatchObject({ status: 'skipped', pending: 3, embedded: 0 });
+    expect(await embedPendingRoles(db, async () => realSized(), { now })).toMatchObject({ status: 'done', pending: 3, embedded: 3 });
+    expect(await pendingEmbeddings(db, EMBEDDING_MODEL.name, now)).toEqual([]);
+  }));
+
+  it('never throws when the model cannot load or answers badly, and stores nothing bad', () => withRoles(3, async db => {
+    const count = async () => (await db.prepare('SELECT COUNT(*) AS n FROM job_embeddings').first<any>()).n;
+    const offline = await embedPendingRoles(db, async () => { throw new Error('Failed to download https://huggingface.co/x: 403 Forbidden\nmore'); }, { now });
+    expect(offline).toEqual({ status: 'error', model: EMBEDDING_MODEL.name, pending: 3, embedded: 0, durationMs: expect.any(Number), error: 'Failed to download https://huggingface.co/x: 403 Forbidden' });
+
+    expect(await embedPendingRoles(db, async () => realSized({ dimensions: 768 }), { now })).toMatchObject({ status: 'error', embedded: 0 });
+    expect(await embedPendingRoles(db, async () => realSized({ model: 'other/model' }), { now })).toMatchObject({ status: 'error', embedded: 0 });
+    expect(await embedPendingRoles(db, async () => realSized({ async embedPassages(texts) { return texts.map(() => new Float32Array(3)); } }), { now })).toMatchObject({ status: 'error' });
+    expect(await embedPendingRoles(db, async () => realSized({ async embedPassages(texts) { return texts.map(() => new Float32Array(EMBEDDING_MODEL.dimensions)); } }), { now })).toMatchObject({ status: 'error' });
+    expect(await embedPendingRoles(db, async () => realSized({ async embedPassages(texts) { return texts.slice(1).map(padded); } }), { now })).toMatchObject({ status: 'error' });
+    expect(await embedPendingRoles(db, async () => realSized({ async embedPassages(texts) { return texts.map(() => new Float32Array(EMBEDDING_MODEL.dimensions).fill(NaN)); } }), { now })).toMatchObject({ status: 'error' });
+    expect(await count()).toBe(0);
+
+    await db.exec('DROP TABLE job_embeddings');
+    expect(await embedPendingRoles(db, async () => realSized(), { now })).toMatchObject({ status: 'error', pending: 0 });
+  }));
 });

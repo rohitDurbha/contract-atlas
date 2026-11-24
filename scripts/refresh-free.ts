@@ -6,6 +6,8 @@ import { writeFile } from 'node:fs/promises';
 import { trainPayModel } from '../server/pay-model';
 import { enrichPending, providersFromEnv, runOptionsFromEnv } from '../server/enrichment';
 import { collectStartups } from '../server/startups/collect';
+import { embedLimitFromEnv, embedPending } from '../server/embeddings';
+import { loadFastEmbedder } from '../server/fastembed';
 const {db,close}=openSQLite('data/atlas.sqlite');
 try {
   await ensureDB(db);
@@ -21,6 +23,10 @@ try {
   // throws, and without GROQ_API_KEY or GEMINI_API_KEY it does nothing.
   const enrichment=await enrichPending(db,providersFromEnv(),runOptionsFromEnv());
   if(enrichment.status==='error'||enrichment.status==='stopped')console.warn(`Enrichment ${enrichment.status}; the refresh continues.`,enrichment.error??'');
+  // Semantic search vectors for new or edited feed roles. A model that cannot
+  // download or load is reported and the refresh publishes without new vectors.
+  const embeddings=await embedPending(db,()=>loadFastEmbedder({cacheDir:process.env.FASTEMBED_CACHE}),{limit:embedLimitFromEnv()});
+  if(embeddings.status==='error')console.warn('Embedding failed; the refresh continues.',embeddings.error??'');
   // StartupAtlas reads public startup job boards into its own tables. It is
   // separate from the contract feed, and a failure here never stops the refresh.
   let startups:unknown;
@@ -32,5 +38,5 @@ try {
   const payModel=await trainPayModel(db);
   await writeFile('data/pay-model.json',JSON.stringify(payModel)+'\n');
   const payRoles=Object.fromEntries(Object.entries(payModel.currencies).map(([currency,m])=>[currency,m.roles]));
-  console.log(JSON.stringify({...run,pruned,duplicates,payRoles,enrichment,startups}));
+  console.log(JSON.stringify({...run,pruned,duplicates,payRoles,enrichment,embeddings,startups}));
 }finally{close();}
