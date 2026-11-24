@@ -117,6 +117,33 @@ describe('requesting enrichment', () => {
     expect(await requestEnrichment([groq, gemini], 'input', { fetch })).toBeNull();
     expect(await requestEnrichment([], 'input', { fetch })).toBeNull();
   });
+
+  it('reports a short reason for every provider that fails', async () => {
+    const reasons: string[] = [];
+    const onFailure = (reason: string) => reasons.push(reason);
+    const fetch = (async (url: string) => {
+      if (url.includes('groq')) return reply(400, { error: { message: 'Failed to validate JSON', type: 'invalid_request_error', code: 'json_validate_failed' } });
+      return reply(429, { error: { code: 429, message: 'Quota exceeded', status: 'RESOURCE_EXHAUSTED' } });
+    }) as unknown as typeof globalThis.fetch;
+    expect(await requestEnrichment([groq, gemini], 'input', { fetch, onFailure })).toBeNull();
+    expect(reasons).toEqual(['groq: HTTP 400 json_validate_failed', 'gemini: HTTP 429 RESOURCE_EXHAUSTED']);
+
+    reasons.length = 0;
+    const odd = (async (url: string) => {
+      if (url.includes('groq')) throw new Error('connect failed for key q\nstack');
+      return reply(200, { candidates: [{ content: { parts: [{ text: '[1, 2]' }] } }] });
+    }) as unknown as typeof globalThis.fetch;
+    expect(await requestEnrichment([{ ...groq, apiKey: 'secret-key' }, gemini], 'input', { fetch: odd, onFailure })).toBeNull();
+    expect(reasons).toEqual(['groq: connect failed for key q', 'gemini: answer did not match the schema']);
+
+    reasons.length = 0;
+    const leaky = (async () => { throw new Error('bad header secret-key'); }) as unknown as typeof globalThis.fetch;
+    const slow = (async (_url: string, init: RequestInit) => new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal?.reason)))) as unknown as typeof globalThis.fetch;
+    await requestEnrichment([{ ...groq, apiKey: 'secret-key' }], 'input', { fetch: leaky, onFailure });
+    await requestEnrichment([groq], 'input', { fetch: slow, onFailure, timeoutMs: 5 });
+    await requestEnrichment([groq], 'input', { fetch: (async () => reply(500, 'oops')) as unknown as typeof globalThis.fetch, onFailure });
+    expect(reasons).toEqual(['groq: bad header ***', 'groq: timed out', 'groq: HTTP 500']);
+  });
 });
 
 describe('storing enrichment', () => {
@@ -205,13 +232,17 @@ describe('enriching pending roles during a refresh', () => {
     for (const key of ['a', 'b', 'c', 'd', 'e']) await add(key, 'Data Engineer ' + key, 1);
     let calls = 0;
     const down = (async () => { calls++; return reply(503, { error: 'down' }); }) as unknown as typeof globalThis.fetch;
-    expect(await enrichPending(db, [groq], { fetch: down, sleep: noSleep, now })).toMatchObject({ status: 'stopped', attempted: 3, failed: 3, enriched: 0 });
+    const stopped = await enrichPending(db, [groq], { fetch: down, sleep: noSleep, now });
+    expect(stopped).toMatchObject({ status: 'stopped', attempted: 3, failed: 3, enriched: 0 });
+    expect(stopped.failures).toEqual({ 'groq: HTTP 503': 3 });
     expect(calls).toBe(3);
 
     // One bad answer between good ones does not stop the run.
     let n = 0;
     const flaky = (async () => (++n === 2 ? reply(200, { choices: [{ message: { content: 'nope' } }] }) : answer())) as unknown as typeof globalThis.fetch;
-    expect(await enrichPending(db, [groq], { fetch: flaky, sleep: noSleep, now })).toMatchObject({ status: 'done', attempted: 5, enriched: 4, failed: 1 });
+    const done = await enrichPending(db, [groq], { fetch: flaky, sleep: noSleep, now });
+    expect(done).toMatchObject({ status: 'done', attempted: 5, enriched: 4, failed: 1, failures: { 'groq: answer did not match the schema': 1 } });
+    expect((await enrichPending(db, [groq], { fetch: answer as unknown as typeof globalThis.fetch, sleep: noSleep, now })).failures).toBeUndefined();
 
     await db.exec('DROP TABLE job_enrichment');
     expect(await enrichPending(db, [groq], { fetch: flaky, sleep: noSleep, now })).toMatchObject({ status: 'error', attempted: 0 });

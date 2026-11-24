@@ -155,6 +155,28 @@ export function parseEnrichment(text: string): Enrichment | null {
 
 type Fetch = typeof fetch;
 
+// The short error code a provider sends with a failed call, such as Groq's
+// json_validate_failed or Gemini's RESOURCE_EXHAUSTED, so a refresh log shows
+// why calls failed without printing whole response bodies.
+async function errorCode(response: Response): Promise<string> {
+  try {
+    const body = await response.json() as { error?: { code?: unknown; status?: unknown; type?: unknown } | string };
+    const e = body?.error;
+    const code = typeof e === 'object' && e ? [e.code, e.status, e.type].find(v => typeof v === 'string' && /^[\w.-]{1,60}$/.test(v)) : undefined;
+    return code ? ` ${code}` : '';
+  } catch {
+    return '';
+  }
+}
+
+// Tidies a failure message into a short reason that is safe to log and to
+// count, keeping only the first line and dropping anything that looks like a key.
+function failureReason(provider: EnrichmentProvider, error: unknown): string {
+  const raw = error instanceof Error ? (error.name === 'TimeoutError' || error.name === 'AbortError' ? 'timed out' : error.message) : String(error);
+  const message = raw.split('\n')[0].split(provider.apiKey).join('***').slice(0, 80).trim() || 'unknown error';
+  return `${provider.name}: ${message}`;
+}
+
 async function callGroq(provider: EnrichmentProvider, input: string, fetchImpl: Fetch, signal: AbortSignal): Promise<string> {
   const response = await fetchImpl('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -167,7 +189,7 @@ async function callGroq(provider: EnrichmentProvider, input: string, fetchImpl: 
       response_format: { type: 'json_schema', json_schema: { name: 'job_enrichment', schema: RESPONSE_SCHEMA } },
     }),
   });
-  if (!response.ok) throw new Error(`Groq HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}${await errorCode(response)}`);
   const data = await response.json() as { choices?: { message?: { content?: string } }[] };
   return data.choices?.[0]?.message?.content ?? '';
 }
@@ -184,7 +206,7 @@ async function callGemini(provider: EnrichmentProvider, input: string, fetchImpl
       generationConfig: { temperature: 0, responseMimeType: 'application/json', responseJsonSchema: RESPONSE_SCHEMA },
     }),
   });
-  if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}${await errorCode(response)}`);
   const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   return data.candidates?.[0]?.content?.parts?.map(p => p.text ?? '').join('') ?? '';
 }
@@ -193,7 +215,9 @@ export interface EnrichResult { enrichment: Enrichment; provider: EnrichmentProv
 
 // Tries each provider in order and returns the first valid answer, or null
 // when every provider failed or answered with something unusable.
-export async function requestEnrichment(providers: EnrichmentProvider[], input: string, options: { fetch?: Fetch; timeoutMs?: number } = {}): Promise<EnrichResult | null> {
+// Each provider that fails is reported through onFailure with a short reason,
+// so a refresh can say why calls failed.
+export async function requestEnrichment(providers: EnrichmentProvider[], input: string, options: { fetch?: Fetch; timeoutMs?: number; onFailure?: (reason: string) => void } = {}): Promise<EnrichResult | null> {
   const fetchImpl = options.fetch ?? fetch;
   for (const provider of providers) {
     try {
@@ -201,8 +225,10 @@ export async function requestEnrichment(providers: EnrichmentProvider[], input: 
       const text = provider.name === 'groq' ? await callGroq(provider, input, fetchImpl, signal) : await callGemini(provider, input, fetchImpl, signal);
       const enrichment = parseEnrichment(text);
       if (enrichment) return { enrichment, provider };
-    } catch {
+      options.onFailure?.(`${provider.name}: ${text.trim() ? 'answer did not match the schema' : 'empty answer'}`);
+    } catch (error) {
       // Fall through to the next provider.
+      options.onFailure?.(failureReason(provider, error));
     }
   }
   return null;
@@ -308,6 +334,9 @@ export interface EnrichRunResult {
   enriched: number;
   failed: number;
   providers: string[];
+  // How often each provider failed and why, for example
+  // {"groq: HTTP 429 rate_limit_exceeded": 2}. Left out when nothing failed.
+  failures?: Record<string, number>;
   error?: string;
 }
 
@@ -332,6 +361,10 @@ export async function enrichPending(db: Database, providers: EnrichmentProvider[
   const limit = options.limit ?? ENRICH_DEFAULT_LIMIT;
   const delayMs = options.delayMs ?? ENRICH_DEFAULT_DELAY_MS;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
+  const countFailure = (reason: string) => {
+    result.failures ??= {};
+    result.failures[reason] = (result.failures[reason] ?? 0) + 1;
+  };
   try {
     const pending = await pendingEnrichment(db, options.now);
     result.pending = pending.length;
@@ -340,7 +373,7 @@ export async function enrichPending(db: Database, providers: EnrichmentProvider[
     for (const role of pending.slice(0, limit)) {
       if (result.attempted > 0 && delayMs > 0) await sleep(delayMs);
       result.attempted++;
-      const answer = await requestEnrichment(providers, role.input, { fetch: options.fetch });
+      const answer = await requestEnrichment(providers, role.input, { fetch: options.fetch, onFailure: countFailure });
       if (answer) {
         await saveEnrichment(db, role.jobId, role.hash, answer, options.now);
         result.enriched++;

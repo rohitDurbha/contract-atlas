@@ -10,6 +10,7 @@ Live link: https://contract-atlas-amber.vercel.app, deployed by Vercel on every 
 
 - [ ] Confirm the first refreshes with `GROQ_API_KEY` and `GEMINI_API_KEY` set (added Nov 23, 2026) stored enrichment answers in the snapshot, and that seniority and normalized titles now show on the live site. If the provider calls fail, fix them before item 7.
   - Nov 23. The first manual refresh with both keys stored 33 answers out of 40 attempts and `verify:free` passed. Seven calls failed on both providers, so the cause should be found from the refresh log. Seniority tags on the live cards still need a visual check.
+  - Nov 24. The snapshot now holds 144 valid answers (137 from Groq and 7 from Gemini), with 47 roles tagged mid, senior, lead or principal and the rest unknown. The overnight refresh enriched 38 of 40 roles and the Verify step read the new run back from the live overview. The refresh log could not say why calls failed because the reasons were thrown away, so each run now prints a `failures` count keyed by provider and short reason (for example `groq: HTTP 429 rate_limit_exceeded`), and the next refresh log will name the cause. Seniority tags on the live cards still need a visual check, since this session's network could not open the site.
 
 ## Bugs found on the live site
 
