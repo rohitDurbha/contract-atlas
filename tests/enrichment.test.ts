@@ -77,6 +77,7 @@ describe('parsing model answers', () => {
 });
 
 describe('requesting enrichment', () => {
+  const noSleep = async () => {};
   const groq = { name: 'groq' as const, model: 'm1', apiKey: 'q' };
   const gemini = { name: 'gemini' as const, model: 'm2', apiKey: 'g' };
 
@@ -104,9 +105,9 @@ describe('requesting enrichment', () => {
       if (url.includes('groq')) return reply(429, { error: 'rate limited' });
       return reply(200, { candidates: [{ content: { parts: [{ text: JSON.stringify(good) }] } }] });
     }) as unknown as typeof globalThis.fetch;
-    const result = await requestEnrichment([groq, gemini], 'input', { fetch });
+    const result = await requestEnrichment([groq, gemini], 'input', { fetch, sleep: noSleep });
     expect(result?.provider).toBe(gemini);
-    expect(urls[1]).toBe('https://generativelanguage.googleapis.com/v1beta/models/m2:generateContent');
+    expect(urls[2]).toBe('https://generativelanguage.googleapis.com/v1beta/models/m2:generateContent');
   });
 
   it('returns null when every provider fails or answers badly', async () => {
@@ -125,8 +126,8 @@ describe('requesting enrichment', () => {
       if (url.includes('groq')) return reply(400, { error: { message: 'Failed to validate JSON', type: 'invalid_request_error', code: 'json_validate_failed' } });
       return reply(429, { error: { code: 429, message: 'Quota exceeded', status: 'RESOURCE_EXHAUSTED' } });
     }) as unknown as typeof globalThis.fetch;
-    expect(await requestEnrichment([groq, gemini], 'input', { fetch, onFailure })).toBeNull();
-    expect(reasons).toEqual(['groq: HTTP 400 json_validate_failed', 'gemini: HTTP 429 RESOURCE_EXHAUSTED']);
+    expect(await requestEnrichment([groq, gemini], 'input', { fetch, onFailure, sleep: noSleep })).toBeNull();
+    expect(reasons).toEqual(['groq: HTTP 400 json_validate_failed', 'gemini: HTTP 429 RESOURCE_EXHAUSTED', 'gemini: HTTP 429 RESOURCE_EXHAUSTED']);
 
     reasons.length = 0;
     const odd = (async (url: string) => {
@@ -143,6 +144,41 @@ describe('requesting enrichment', () => {
     await requestEnrichment([groq], 'input', { fetch: slow, onFailure, timeoutMs: 5 });
     await requestEnrichment([groq], 'input', { fetch: (async () => reply(500, 'oops')) as unknown as typeof globalThis.fetch, onFailure });
     expect(reasons).toEqual(['groq: bad header ***', 'groq: timed out', 'groq: HTTP 500']);
+  });
+
+  it('waits as asked and tries a rate limited or busy provider once more', async () => {
+    const waits: number[] = [];
+    const sleep = async (ms: number) => { waits.push(ms); };
+    const limited = (seconds: string | null, status = 429) => new Response(JSON.stringify({ error: { code: 'rate_limit_exceeded' } }), { status, headers: seconds == null ? {} : { 'retry-after': seconds } });
+    const ok = () => reply(200, { choices: [{ message: { content: JSON.stringify(good) } }] });
+
+    // Groq asks for 7 seconds, then answers.
+    let n = 0;
+    const once = (async () => (++n === 1 ? limited('7') : ok())) as unknown as typeof globalThis.fetch;
+    expect((await requestEnrichment([groq], 'input', { fetch: once, sleep }))?.provider).toBe(groq);
+    expect([waits, n]).toEqual([[7000], 2]);
+
+    // A busy answer with no Retry-After waits the default, and a second refusal moves on.
+    waits.length = 0; n = 0;
+    const busy = (async (url: string) => { n++; return url.includes('groq') ? limited(null, 503) : reply(200, { candidates: [{ content: { parts: [{ text: JSON.stringify(good) }] } }] }); }) as unknown as typeof globalThis.fetch;
+    expect((await requestEnrichment([groq, gemini], 'input', { fetch: busy, sleep }))?.provider).toBe(gemini);
+    expect([waits, n]).toEqual([[5000], 3]);
+
+    // A wait longer than the cap, or any other error, is not retried.
+    waits.length = 0; n = 0;
+    const long = (async () => { n++; return limited('120'); }) as unknown as typeof globalThis.fetch;
+    expect(await requestEnrichment([groq], 'input', { fetch: long, sleep })).toBeNull();
+    const broken = (async () => { n++; return reply(400, { error: { code: 'json_validate_failed' } }); }) as unknown as typeof globalThis.fetch;
+    expect(await requestEnrichment([groq], 'input', { fetch: broken, sleep })).toBeNull();
+    expect([waits, n]).toEqual([[], 2]);
+
+    // Retry-After can also be a date.
+    const at = new Date(Date.now() + 3000).toUTCString();
+    n = 0;
+    const dated = (async () => (++n === 1 ? limited(at) : ok())) as unknown as typeof globalThis.fetch;
+    expect(await requestEnrichment([groq], 'input', { fetch: dated, sleep })).not.toBeNull();
+    expect(waits[0]).toBeGreaterThan(1000);
+    expect(waits[0]).toBeLessThanOrEqual(3000);
   });
 });
 
@@ -234,8 +270,9 @@ describe('enriching pending roles during a refresh', () => {
     const down = (async () => { calls++; return reply(503, { error: 'down' }); }) as unknown as typeof globalThis.fetch;
     const stopped = await enrichPending(db, [groq], { fetch: down, sleep: noSleep, now });
     expect(stopped).toMatchObject({ status: 'stopped', attempted: 3, failed: 3, enriched: 0 });
-    expect(stopped.failures).toEqual({ 'groq: HTTP 503': 3 });
-    expect(calls).toBe(3);
+    // Each busy answer is tried once more before the role counts as failed.
+    expect(stopped.failures).toEqual({ 'groq: HTTP 503': 6 });
+    expect(calls).toBe(6);
 
     // One bad answer between good ones does not stop the run.
     let n = 0;

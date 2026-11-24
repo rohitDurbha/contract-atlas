@@ -81,6 +81,10 @@ jobs:
           git add data/atlas.sqlite data/pay-model.json
           if ! git diff --cached --quiet; then
             git commit -m "Refresh public contract-role snapshot"
+            # A code push can land on main while collection runs. Only this
+            # workflow writes data/, so replaying the snapshot commit on top
+            # is safe, and that push starts its own refresh afterwards.
+            git pull --rebase origin main
             git push
           fi
       - name: Publish to Vercel Hobby

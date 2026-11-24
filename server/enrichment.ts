@@ -158,6 +158,30 @@ type Fetch = typeof fetch;
 // The short error code a provider sends with a failed call, such as Groq's
 // json_validate_failed or Gemini's RESOURCE_EXHAUSTED, so a refresh log shows
 // why calls failed without printing whole response bodies.
+class ProviderHttpError extends Error {
+  constructor(message: string, readonly status: number, readonly retryAfterMs: number | null) { super(message); }
+}
+
+// Busy and rate limited answers are worth one more try after a short wait.
+const RETRY_STATUSES = new Set([429, 503]);
+// Used when a busy provider does not say how long to wait.
+const DEFAULT_RETRY_MS = 5000;
+// A provider that asks for a longer wait than this is skipped for the call.
+export const MAX_RETRY_WAIT_MS = 20_000;
+
+// Reads Retry-After in seconds or as a date. Groq sends seconds on a 429.
+function retryAfterMs(response: Response, now = Date.now()): number | null {
+  const value = response.headers.get('retry-after')?.trim();
+  if (!value) return null;
+  if (/^\d+(\.\d+)?$/.test(value)) return Math.ceil(Number(value) * 1000);
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
+}
+
+async function failed(response: Response): Promise<ProviderHttpError> {
+  return new ProviderHttpError(`HTTP ${response.status}${await errorCode(response)}`, response.status, retryAfterMs(response));
+}
+
 async function errorCode(response: Response): Promise<string> {
   try {
     const body = await response.json() as { error?: { code?: unknown; status?: unknown; type?: unknown } | string };
@@ -189,7 +213,7 @@ async function callGroq(provider: EnrichmentProvider, input: string, fetchImpl: 
       response_format: { type: 'json_schema', json_schema: { name: 'job_enrichment', schema: RESPONSE_SCHEMA } },
     }),
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}${await errorCode(response)}`);
+  if (!response.ok) throw await failed(response);
   const data = await response.json() as { choices?: { message?: { content?: string } }[] };
   return data.choices?.[0]?.message?.content ?? '';
 }
@@ -206,7 +230,7 @@ async function callGemini(provider: EnrichmentProvider, input: string, fetchImpl
       generationConfig: { temperature: 0, responseMimeType: 'application/json', responseJsonSchema: RESPONSE_SCHEMA },
     }),
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}${await errorCode(response)}`);
+  if (!response.ok) throw await failed(response);
   const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   return data.candidates?.[0]?.content?.parts?.map(p => p.text ?? '').join('') ?? '';
 }
@@ -217,18 +241,26 @@ export interface EnrichResult { enrichment: Enrichment; provider: EnrichmentProv
 // when every provider failed or answered with something unusable.
 // Each provider that fails is reported through onFailure with a short reason,
 // so a refresh can say why calls failed.
-export async function requestEnrichment(providers: EnrichmentProvider[], input: string, options: { fetch?: Fetch; timeoutMs?: number; onFailure?: (reason: string) => void } = {}): Promise<EnrichResult | null> {
+// A rate limited (429) or busy (503) provider is tried once more after the
+// wait it asks for, up to MAX_RETRY_WAIT_MS, before moving to the next one.
+export async function requestEnrichment(providers: EnrichmentProvider[], input: string, options: { fetch?: Fetch; timeoutMs?: number; onFailure?: (reason: string) => void; sleep?: (ms: number) => Promise<void> } = {}): Promise<EnrichResult | null> {
   const fetchImpl = options.fetch ?? fetch;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
   for (const provider of providers) {
-    try {
-      const signal = AbortSignal.timeout(options.timeoutMs ?? 30_000);
-      const text = provider.name === 'groq' ? await callGroq(provider, input, fetchImpl, signal) : await callGemini(provider, input, fetchImpl, signal);
-      const enrichment = parseEnrichment(text);
-      if (enrichment) return { enrichment, provider };
-      options.onFailure?.(`${provider.name}: ${text.trim() ? 'answer did not match the schema' : 'empty answer'}`);
-    } catch (error) {
-      // Fall through to the next provider.
-      options.onFailure?.(failureReason(provider, error));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const signal = AbortSignal.timeout(options.timeoutMs ?? 30_000);
+        const text = provider.name === 'groq' ? await callGroq(provider, input, fetchImpl, signal) : await callGemini(provider, input, fetchImpl, signal);
+        const enrichment = parseEnrichment(text);
+        if (enrichment) return { enrichment, provider };
+        options.onFailure?.(`${provider.name}: ${text.trim() ? 'answer did not match the schema' : 'empty answer'}`);
+        break;
+      } catch (error) {
+        options.onFailure?.(failureReason(provider, error));
+        const wait = error instanceof ProviderHttpError && RETRY_STATUSES.has(error.status) ? error.retryAfterMs ?? DEFAULT_RETRY_MS : null;
+        if (attempt > 0 || wait == null || wait > MAX_RETRY_WAIT_MS) break;
+        await sleep(wait);
+      }
     }
   }
   return null;
@@ -373,7 +405,7 @@ export async function enrichPending(db: Database, providers: EnrichmentProvider[
     for (const role of pending.slice(0, limit)) {
       if (result.attempted > 0 && delayMs > 0) await sleep(delayMs);
       result.attempted++;
-      const answer = await requestEnrichment(providers, role.input, { fetch: options.fetch, onFailure: countFailure });
+      const answer = await requestEnrichment(providers, role.input, { fetch: options.fetch, onFailure: countFailure, sleep });
       if (answer) {
         await saveEnrichment(db, role.jobId, role.hash, answer, options.now);
         result.enriched++;
