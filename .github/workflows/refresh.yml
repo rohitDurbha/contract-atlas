@@ -113,7 +113,20 @@ jobs:
               if(!response.ok)throw new Error(`Overview HTTP ${response.status}`);
               const data=await response.json();
               if(data.lastRun?.id!==expected || data.totalJobs<1)throw new Error('Latest snapshot not yet visible');
-              console.log('Verified published snapshot',expected);break;
+              console.log('Verified published snapshot',expected);
+              // Semantic search falls back to keywords instead of failing, so
+              // the run only reports which mode the live API answered with.
+              try {
+              const semantic=await fetch('https://contract-atlas-amber.vercel.app/api/jobs?semantic=1&q=remote+data+engineer+building+pipelines',{signal:AbortSignal.timeout(30000)});
+              const found=semantic.ok?await semantic.json():null;
+              const search=found?.search??{mode:'none',fallback:`HTTP ${semantic.status}`};
+              const summary={mode:search.mode,fallback:search.fallback??null,total:found?.total??0,top:found?.jobs?.[0]?.title??null,similarity:found?.jobs?.[0]?.similarity??null};
+              console.log('Semantic search',JSON.stringify(summary));
+              if(search.mode!=='semantic')console.log(`::warning title=Semantic search fell back::${search.fallback??'unknown reason'}`);
+              } catch(error) {
+                console.log(`::warning title=Semantic search request failed::${error.message}`);
+              }
+              break;
             } catch(error) {
               if(attempt===5)throw error;
               await new Promise(resolve=>setTimeout(resolve,10000));
