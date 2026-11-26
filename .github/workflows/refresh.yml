@@ -87,6 +87,10 @@ jobs:
             git pull --rebase origin main
             git push
           fi
+      - name: Bundle the query model for semantic search
+        env:
+          FASTEMBED_CACHE: .cache/fastembed
+        run: node --import tsx scripts/bundle-model.ts
       - name: Publish to Vercel Hobby
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

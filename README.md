@@ -66,7 +66,7 @@ npm run verify:free
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/jobs` | Search, filters, sorting, pagination and facets |
+| `GET /api/jobs` | Search, filters, sorting, pagination and facets. Add `semantic=1` to rank roles by how closely they match the description in `q` |
 | `GET /api/jobs/:id` | Full details and the original application link |
 | `GET /api/overview` | Feed counts, source health and the latest run |
 | `GET /api/sources` | Status and collection times for every source |
@@ -87,6 +87,7 @@ AI assistants such as Claude can search the feed through a read-only Model Conte
 | `list_sources` | Every job board in the feed with its health, coverage and current role count |
 | `market_trends` | Weekly posting volume, the category mix, the most requested skills with recent versus prior demand, and hourly pay quartiles per currency, overall and by category. Accepts `weeks` (up to 14), `category`, `company` and `skillLimit` |
 | `estimate_pay` | A modelled hourly range (low, mid and high) for a role described by `title`, `skills`, `category`, `location`, `country`, `workMode` and `company`, or for a current role by `id`. It also returns the features that moved the figure most, inputs the model has not seen and the model's held-out error |
+| `semantic_search` | Current roles ranked by meaning against a plain-language `description` of the work, best match first, each with its cosine similarity. Accepts the same filters as `search_jobs` and reports when it had to fall back to keyword search |
 | `match_resume` | Current roles ranked by how closely they match pasted `resumeText`, with each role's similarity score, the skills it shares with the resume, the skills it asks for that the resume does not mention and the terms that drove the score, plus the most common missing skills across the matches. Accepts `limit` (up to 25), `category`, `workMode` and `location` |
 
 The pay estimate comes from a ridge regression on the log of every listed hourly rate in the feed, one model per currency, using title words, skills, category, location, work mode and company as features. The refresh workflow refits it after each collection and saves only the coefficients to `data/pay-model.json`, which ships beside the snapshot, so an estimate costs nothing to serve. About a fifth of the paid roles are held out before the final fit, and their error sets the reported range and accuracy figures. The answer is always labelled as an estimate, and currencies with fewer than 40 listed rates are not modelled.
@@ -182,6 +183,14 @@ The step is careful with the free quotas and with the feed itself.
 The feed, the role detail panel, `search_jobs`, `get_job`, `estimate_pay`, `match_resume` and semantic ranking all prefer the stored skills and a known work mode over what the regex parser found in the listing. Cards also show a seniority tag and the plain title when it adds something. An answer of `unknown` or an empty skill list leaves the listing exactly as the source published it, and the raw listing in the database is never rewritten.
 
 There are a few limits worth knowing about. The model can misread a posting, so enriched fields are helpful labels and should not be treated as facts from the source. `market_trends` and the pay model still train on the listed skills so their history stays consistent until most roles are enriched. A first run against the current backlog of roughly 800 feed roles takes about two days of refreshes to clear, and later runs only see new or edited roles.
+
+## Semantic search
+
+Every role in the feed is embedded during the refresh with `BAAI/bge-small-en-v1.5` through fastembed, and the 384 value vectors are stored in the `job_embeddings` table of the snapshot. A request to `/api/jobs?semantic=1&q=...` or a call to the `semantic_search` tool embeds the description with the same model on the Vercel function and ranks the roles that pass the usual filters by cosine similarity, so a search for "building ETL on Google Cloud" can find a role titled "GCP Data Engineer" even though the words differ. Each result carries its `similarity`, and the response has a `search` object that says whether the request was ranked by meaning or fell back to keyword matching and why.
+
+The model runs on the CPU with no API key and no metered calls, so it costs nothing per search. After the refresh, the workflow copies the quantized model from its cache into `data/model`, checks that it loads, and the Vercel CLI uploads it with the deploy. That folder is ignored by git, and the function config bundles only the Linux x64 build of ONNX Runtime so the function stays well under the size limit. The model loads on the first semantic request a function instance receives, which takes a second or two, and recent query vectors are kept in memory so paging through results does not embed the description again.
+
+A semantic request never fails because of the model. When the model is not bundled or cannot load, when no role has a vector yet, or when the description is empty, the request returns the ordinary keyword feed with a `fallback` reason, and a model that failed to load is not retried for ten minutes. Descriptions are cut at 300 characters, which stays far below the 512 tokens the model reads. With under a thousand roles in the feed the ranking is a plain scan in JavaScript, and sqlite-vec can take over later because the vectors are already stored in the format it reads.
 
 ## StartupAtlas
 

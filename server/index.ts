@@ -9,10 +9,13 @@ import { formatRun } from './ingestion.js';
 import type { Overview } from '../src/types.js';
 import type { Database } from './database.js';
 import { startupCompanies, startupJobs, startupOverview } from './startups/collect.js';
+import { semanticFeed, wantsSemantic, type QueryEmbedder } from './semantic-feed.js';
 
 // The site and the MCP endpoint are served from a read-only snapshot. Collection
 // runs in GitHub Actions, so this app exposes no write routes.
-type Bindings={DB:Database};
+// EMBED embeds a described role for semantic search. Without it, semantic
+// requests fall back to the keyword feed.
+type Bindings={DB:Database;EMBED?:QueryEmbedder|null};
 const app=new Hono<{Bindings:Bindings}>();
 app.use('*',secureHeaders({referrerPolicy:'strict-origin-when-cross-origin',xFrameOptions:false}));
 app.use('/api/*',bodyLimit({maxSize:16_384}));
@@ -23,7 +26,10 @@ app.use('/api/*',async(c,next)=> {
 });
 app.get('/api/access',c=>c.json({canRefresh:false}));
 app.get('/api/health',c=>c.json({ok:true,service:'contract-atlas',timestamp:new Date().toISOString()}));
-app.get('/api/jobs',async c=>c.json(await jobFeed(c.env.DB,new URL(c.req.url).searchParams)));
+app.get('/api/jobs',async c=> {
+  const params=new URL(c.req.url).searchParams;
+  return c.json(wantsSemantic(params)?await semanticFeed(c.env.DB,params,c.env.EMBED):await jobFeed(c.env.DB,params));
+});
 app.get('/api/jobs/:id',async c=> {
   const job=await getFeedJob(c.env.DB,c.req.param('id'));
   return job?c.json(job):c.json({error:'Role not found.'},404);

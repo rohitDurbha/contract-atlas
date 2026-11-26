@@ -52,10 +52,10 @@ describe('MCP server on a controlled database', () => {
   });
   afterAll(() => sqlite.close());
 
-  it('lists the six read-only tools with input schemas', async () => {
+  it('lists the seven read-only tools with input schemas', async () => {
     const { result } = await rpc(handler.fetch, 'https://atlas.test/api/mcp', 'tools/list');
     const tools = Object.fromEntries(result.tools.map((t: any) => [t.name, t]));
-    expect(Object.keys(tools).sort()).toEqual(['estimate_pay', 'get_job', 'list_sources', 'market_trends', 'match_resume', 'search_jobs']);
+    expect(Object.keys(tools).sort()).toEqual(['estimate_pay', 'get_job', 'list_sources', 'market_trends', 'match_resume', 'search_jobs', 'semantic_search']);
     for (const tool of Object.values(tools) as any[]) {
       expect(tool.annotations.readOnlyHint).toBe(true);
       expect(tool.inputSchema.type).toBe('object');

@@ -28,6 +28,8 @@ export interface Job {
   normalizedTitle?: string;
   /** True when skills or work mode come from the stored enrichment instead of the listing. */
   enriched?: boolean;
+  /** Cosine similarity to a described role, only on semantic search results. */
+  similarity?: number;
 }
 export interface Source {
   id: string;
@@ -77,4 +79,14 @@ export interface Feed {
   page: number;
   pages: number;
   facets: { companies: { name: string; count: number }[]; categories: { name: string; count: number }[]; countries: string[] };
+  /** How a semantic request was answered. Absent on ordinary keyword requests. */
+  search?: FeedSearch;
+}
+export interface FeedSearch {
+  /** "semantic" when roles were ranked by meaning, "keyword" when the request fell back to text matching. */
+  mode: 'semantic' | 'keyword';
+  /** Why a semantic request fell back to keyword search. */
+  fallback?: string;
+  /** Roles that matched the filters but had no stored vector, so they could not be ranked. */
+  rolesWithoutVectors?: number;
 }

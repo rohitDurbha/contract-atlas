@@ -4,8 +4,13 @@ import { freeFetch } from '../server/free-runtime.js';
 import { readFileSync } from 'node:fs';
 import { createAtlasMcpHandler } from '../server/mcp.js';
 import { isPayModel, type PayModel } from '../server/pay-model.js';
+import { createQueryEmbedder } from '../server/semantic-feed.js';
+import { BUNDLED_MODEL_DIR, loadFastEmbedder } from '../server/fastembed.js';
 const {db}=openSQLite(resolve(process.cwd(),'data/atlas.sqlite'),true);
-const fetcher=freeFetch(db);
+// The query model loads on the first semantic search, from the copy the
+// refresh workflow bundles beside the snapshot.
+const embedder=createQueryEmbedder(()=>loadFastEmbedder({cacheDir:resolve(process.cwd(),BUNDLED_MODEL_DIR),offline:true}));
+const fetcher=freeFetch(db,embedder);
 // The pay model is trained by the refresh workflow and bundled beside the
 // snapshot. A missing or malformed file only disables estimate_pay.
 function loadPayModel():PayModel|null {
@@ -13,7 +18,7 @@ function loadPayModel():PayModel|null {
   catch {return null;}
 }
 const payModel=loadPayModel();
-const mcp=createAtlasMcpHandler(db,{payModel:()=>payModel});
+const mcp=createAtlasMcpHandler(db,{payModel:()=>payModel,embedder});
 export default {fetch(request:Request) {
   const url=new URL(request.url),route=url.searchParams.get('__atlasRoute');
   if(route!==null) {url.pathname='/api/'+route;url.searchParams.delete('__atlasRoute');request=new Request(url,request);}

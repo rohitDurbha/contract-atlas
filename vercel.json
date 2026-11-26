@@ -6,8 +6,9 @@
   "installCommand": "npm ci",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "data/{atlas.sqlite,pay-model.json}",
-      "maxDuration": 30
+      "includeFiles": "{data/atlas.sqlite,data/pay-model.json,data/model/**,node_modules/onnxruntime-node/bin/napi-v3/linux/x64/**}",
+      "maxDuration": 30,
+      "excludeFiles": "node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32,linux/arm64}/**"
     }
   },
   "rewrites": [

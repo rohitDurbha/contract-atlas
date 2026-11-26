@@ -7,6 +7,7 @@ import { getFeedJob, jobFeed, listSources } from './db.js';
 import { marketTrends, MAX_TREND_WEEKS } from './trends.js';
 import { estimatePay, type PayFeatures, type PayModel } from './pay-model.js';
 import { matchResume, MAX_MATCHES, MAX_RESUME_CHARS, MIN_RESUME_CHARS } from './resume-match.js';
+import { MAX_DESCRIPTION_CHARS, semanticFeed, type QueryEmbedder } from './semantic-feed.js';
 import type { Job } from '../src/types.js';
 import type { Database } from './database.js';
 
@@ -69,8 +70,15 @@ function result(data: Record<string, unknown>) {
 export interface AtlasMcpOptions {
   // Returns the pay model trained during the last refresh, or null when none ships.
   payModel?: () => PayModel | null;
+  // Embeds a described role for semantic_search. Without it the tool falls back to keyword search.
+  embedder?: QueryEmbedder | null;
 }
 
+const { query: _query, sort: _sort, ...searchFilters } = searchJobsInput.shape;
+export const semanticSearchInput = z.object({
+  description: z.string().trim().min(3).max(MAX_DESCRIPTION_CHARS * 2).describe(`The role wanted, in plain words, for example "remote data engineering on GCP with Airflow". Only the first ${MAX_DESCRIPTION_CHARS} characters are used.`),
+  ...searchFilters,
+});
 export const estimatePayInput = z.object({
   id: z.string().trim().min(1).max(200).optional().describe('Estimate for a current role by its search_jobs id. Its title, skills, category, location and company are used, and any other fields given here override them.'),
   title: z.string().trim().min(2).max(150).optional().describe('Role title, for example "Senior Data Engineer". Required unless id is given.'),
@@ -87,7 +95,7 @@ const errorResult = (text: string) => ({ content: [{ type: 'text' as const, text
 
 export function buildMcpServer(db: Database, options: AtlasMcpOptions = {}): McpServer {
   const server = new McpServer(SERVER_INFO, {
-    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, market_trends for posting volume, skill demand, category mix and hourly pay ranges over time, estimate_pay for a modelled hourly range when a role does not list pay, and match_resume to rank current roles against resume text.',
+    instructions: 'Contract Atlas lists technical contract roles from public staffing and vendor-management boards over the last 90 days. All tools are read-only. Use search_jobs to find roles by keyword and filters, semantic_search to find roles from a plain-language description of the work, get_job for the full posting and list_sources to see which boards are covered and how fresh they are, market_trends for posting volume, skill demand, category mix and hourly pay ranges over time, estimate_pay for a modelled hourly range when a role does not list pay, and match_resume to rank current roles against resume text.',
   });
 
   server.registerTool('search_jobs', {
@@ -101,6 +109,24 @@ export function buildMcpServer(db: Database, options: AtlasMcpOptions = {}): Mcp
       total: feed.total, page: feed.page, pages: feed.pages,
       jobs: feed.jobs.map(summary),
       facets: { companies: feed.facets.companies, categories: feed.facets.categories, countries: feed.facets.countries },
+    });
+  });
+
+  server.registerTool('semantic_search', {
+    title: 'Describe the role you want',
+    description: 'Find current contract roles that match a plain-language description of the work, ranked by meaning rather than exact words. The description and every role are embedded with BAAI/bge-small-en-v1.5 and compared by cosine similarity, so "building ETL on Google Cloud" can match a role titled "GCP Data Engineer". Accepts the same filters as search_jobs and returns 18 roles per page, best match first, each with its similarity. When the model or stored vectors are unavailable it falls back to keyword search and says so in mode and fallback.',
+    inputSchema: semanticSearchInput,
+    annotations: READ_ONLY,
+  }, async ({ description, ...filters }) => {
+    const params = feedParams({ ...filters, query: description.slice(0, MAX_DESCRIPTION_CHARS) });
+    params.set('semantic', '1');
+    const feed = await semanticFeed(db, params, options.embedder);
+    return result({
+      mode: feed.search?.mode ?? 'keyword',
+      ...(feed.search?.fallback ? { fallback: feed.search.fallback } : {}),
+      ...(feed.search?.rolesWithoutVectors ? { rolesWithoutVectors: feed.search.rolesWithoutVectors } : {}),
+      total: feed.total, page: feed.page, pages: feed.pages,
+      jobs: feed.jobs.map(job => ({ ...summary(job), ...(job.similarity != null ? { similarity: job.similarity } : {}) })),
     });
   });
 

@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
-import { and, eq, like, or, sql, desc, inArray } from 'drizzle-orm';
+import { and, eq, like, or, sql, desc, inArray, type SQL } from 'drizzle-orm';
 import * as schema from './schema.js';
 import { SOURCES, RETIRED_SOURCE_IDS } from './sources.js';
 import seed from './seed.json' with { type: 'json' };
@@ -183,7 +183,7 @@ export function feedScopeSql(alias='' , now=new Date()):string {
 }
 // Drizzle builds the feed queries and hands the SQL to this callback, which
 // expects rows as arrays of column values in select order.
-function drizzleFor(db: Database) {
+export function drizzleFor(db: Database) {
   return drizzle(async(query,params,method)=> {
     const statement=db.prepare(query).bind(...params);
     if (method==='run') { await statement.run(); return {rows:[]}; }
@@ -191,11 +191,13 @@ function drizzleFor(db: Database) {
     return {rows:method==='get'?rows[0] as any:rows};
   });
 }
-export async function jobFeed(db: Database, p: URLSearchParams): Promise<Feed> {
-  const orm=drizzleFor(db),j=schema.jobs;
-  const active=and(sql.raw(feedScopeSql()),inArray(j.sourceId,SOURCES.map(s=>s.id)));
+// The feed scope plus every filter in the query string. A semantic search
+// ranks by meaning instead of matching the text, so it leaves q out.
+export async function feedFilters(db: Database, p: URLSearchParams, options: { textQuery?: boolean } = {}) {
+  const j=schema.jobs;
+  const active=and(sql.raw(feedScopeSql()),inArray(j.sourceId,SOURCES.map(s=>s.id)))!;
   const filters=[active];
-  const query=p.get('q')?.trim().slice(0,150);
+  const query=options.textQuery===false?'':p.get('q')?.trim().slice(0,150);
   if (query) { const term=`%${query.replace(/[\\%_]/g,'\\$&')}%`; filters.push(sql`(${j.title} LIKE ${term} ESCAPE '\\' OR ${j.company} LIKE ${term} ESCAPE '\\' OR ${j.location} LIKE ${term} ESCAPE '\\' OR ${j.data} LIKE ${term} ESCAPE '\\')`); }
   if (p.get('location')) filters.push(like(j.location,`%${p.get('location')!.slice(0,100)}%`));
   for (const [key,column] of [['company',j.company],['category',j.category],['country',j.country]] as const) {
@@ -212,18 +214,29 @@ export async function jobFeed(db: Database, p: URLSearchParams): Promise<Feed> {
   if (p.get('pay')==='yes') filters.push(sql`(${j.payMin} IS NOT NULL OR ${j.payMax} IS NOT NULL)`);
   if (p.get('sort')==='pay') filters.push(sql`json_extract(${j.data}, '$.currency') = 'USD' AND lower(json_extract(${j.data}, '$.payPeriod')) IN ('hour','hourly','hr') AND (${j.payMin} IS NOT NULL OR ${j.payMax} IS NOT NULL)`);
   const ids=p.getAll('id'); if(ids.length) filters.push(inArray(j.id,ids.slice(0,250)));
-  const where=and(...filters),limit=18;
-  const count=await orm.select({count:sql<number>`count(*)`}).from(j).where(where);
-  const total=Number(count[0]?.count||0), pages=Math.max(1,Math.ceil(total/limit));
-  const page=Math.min(pages,Math.max(1,Math.floor(Number(p.get('page'))||1)));
-  const order=p.get('sort')==='company'?[j.company,desc(j.postedAt)]:p.get('sort')==='pay'?[desc(j.payMax),desc(j.payMin)]:p.get('sort')==='discovered'?[desc(j.firstSeenAt)]:[desc(j.postedAt),desc(j.firstSeenAt)];
-  const rows=await orm.select().from(j).where(where).orderBy(...order).limit(limit).offset((page-1)*limit);
+  return {active,where:and(...filters)!};
+}
+// Company, category and country values across the whole feed, for the filter menus.
+export async function feedFacets(db: Database, active: SQL): Promise<Feed['facets']> {
+  const orm=drizzleFor(db),j=schema.jobs;
   const [companies,categories,countries]=await Promise.all([
     orm.select({name:j.company,count:sql<number>`count(*)`}).from(j).where(active).groupBy(j.company).orderBy(j.company),
     orm.select({name:j.category,count:sql<number>`count(*)`}).from(j).where(active).groupBy(j.category).orderBy(j.category),
     orm.select({country:j.country}).from(j).where(active).groupBy(j.country).orderBy(j.country),
   ]);
-  return {jobs:await withEnrichment(db,rows.map(hydrate)),total,page,pages,facets:{companies,categories,countries:countries.map(r=>r.country)}};
+  return {companies,categories,countries:countries.map(r=>r.country)};
+}
+export const FEED_PAGE_SIZE=18;
+export async function jobFeed(db: Database, p: URLSearchParams): Promise<Feed> {
+  const orm=drizzleFor(db),j=schema.jobs;
+  const {active,where}=await feedFilters(db,p);
+  const limit=FEED_PAGE_SIZE;
+  const count=await orm.select({count:sql<number>`count(*)`}).from(j).where(where);
+  const total=Number(count[0]?.count||0), pages=Math.max(1,Math.ceil(total/limit));
+  const page=Math.min(pages,Math.max(1,Math.floor(Number(p.get('page'))||1)));
+  const order=p.get('sort')==='company'?[j.company,desc(j.postedAt)]:p.get('sort')==='pay'?[desc(j.payMax),desc(j.payMin)]:p.get('sort')==='discovered'?[desc(j.firstSeenAt)]:[desc(j.postedAt),desc(j.firstSeenAt)];
+  const rows=await orm.select().from(j).where(where).orderBy(...order).limit(limit).offset((page-1)*limit);
+  return {jobs:await withEnrichment(db,rows.map(hydrate)),total,page,pages,facets:await feedFacets(db,active)};
 }
 const retiredSql=RETIRED_SOURCE_IDS.map(()=>'?').join(',');
 // One role from the public feed, or null when it is outside the feed policy.

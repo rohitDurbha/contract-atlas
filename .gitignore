@@ -13,3 +13,4 @@ data/*-journal
 data/*-wal
 data/*-shm
 .cache/
+data/model/
