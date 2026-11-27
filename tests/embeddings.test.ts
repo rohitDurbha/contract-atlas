@@ -7,7 +7,7 @@ import { pruneSnapshot } from '../server/prune';
 import { SOURCES } from '../server/sources';
 import {
   EMBED_DEFAULT_LIMIT, EMBEDDING_MODEL, QUERY_PREFIX, decodeVector, dot, embedLimitFromEnv, embedPending as embedPendingRoles, embeddingHash, embeddingText,
-  encodeVector, normalize, pendingEmbeddings, saveEmbedding, semanticSearch, type Embedder,
+  embeddingProblems, encodeVector, normalize, pendingEmbeddings, saveEmbedding, semanticSearch, type Embedder,
 } from '../server/embeddings';
 
 const now = new Date('2026-11-19T12:00:00.000Z');
@@ -127,6 +127,59 @@ describe('semantic search on a controlled database', () => {
     await pruneSnapshot(db, now);
     const left = (await db.prepare('SELECT job_id FROM job_embeddings ORDER BY job_id').all<any>()).results.map((r: any) => r.job_id);
     expect(left).toEqual([id('de'), id('fe'), id('ml')]);
+  });
+});
+
+describe('checking stored vectors before a publish', () => {
+  const sqlite = openSQLite(':memory:');
+  const db = sqlite.db;
+  const id = (key: string) => `${SOURCES[0].id}:${key}`;
+  const model = { name: fake.model, dimensions: fake.dimensions };
+  const hash = 'a'.repeat(64);
+  const store = (jobId: string, vector: Uint8Array, extra: { model?: string; dimensions?: number; hash?: string; at?: string } = {}) =>
+    db.prepare('INSERT OR REPLACE INTO job_embeddings(job_id,input_hash,model,dimensions,vector,embedded_at) VALUES(?,?,?,?,?,?)')
+      .bind(jobId, extra.hash ?? hash, extra.model ?? fake.model, extra.dimensions ?? 3, vector, extra.at ?? now.toISOString()).run();
+
+  beforeAll(async () => {
+    await ensureDB(db);
+    await db.prepare('DELETE FROM jobs').run();
+    for (const key of ['a', 'b', 'c', 'd', 'e', 'f'])
+      await jobStatement(db, makeJob(SOURCES[0], { sourceJobId: key, title: 'Data Engineer ' + key, applyUrl: 'https://example.com/jobs/' + key, postedAt: daysAgo(1) }, now.toISOString())!).run();
+  });
+  afterAll(() => sqlite.close());
+
+  it('passes a snapshot without the table and one whose vectors match the model', async () => {
+    const raw = new DatabaseSync(':memory:');
+    expect(await embeddingProblems(openDatabase(raw))).toEqual([]);
+    raw.close();
+    await saveEmbedding(db, id('a'), hash, fake.model, [3, 4, 0], now);
+    expect(await embeddingProblems(db, model)).toEqual([]);
+  });
+
+  it('names vectors from another model or of another size', async () => {
+    const problems = await embeddingProblems(db);
+    expect(problems.map(p => p.problem)).toEqual([
+      `model "test/topics" is not ${EMBEDDING_MODEL.name}`,
+      `dimensions 3 is not ${EMBEDDING_MODEL.dimensions}`,
+      `vector holds 3 values, expected ${EMBEDDING_MODEL.dimensions}`,
+    ]);
+  });
+
+  it('names damaged, orphaned and badly labelled rows', async () => {
+    await store(id('b'), encodeVector([1, 0]));
+    await store(id('c'), encodeVector([3, 4, 0]));
+    await store(id('d'), encodeVector([NaN, 0, 0]));
+    await store(id('e'), encodeVector([1, 0, 0]), { hash: 'h', at: 'yesterday' });
+    await store(id('gone'), encodeVector([1, 0, 0]));
+    const problems = await embeddingProblems(db, model);
+    const byJob: Record<string, { problem: string }[] | undefined> = {};
+    for (const p of problems) (byJob[p.jobId] ??= []).push(p);
+    expect(byJob[id('a')]).toBeUndefined();
+    expect(byJob[id('b')]!.map(p => p.problem)).toEqual(['vector holds 2 values, expected 3']);
+    expect(byJob[id('c')]!.map(p => p.problem)).toEqual(['vector length is 5.0000, expected 1']);
+    expect(byJob[id('d')]!.map(p => p.problem)).toEqual(['vector has values that are not finite']);
+    expect(byJob[id('e')]!.map(p => p.problem)).toEqual(['input hash is not a sha256 hex digest', 'embedded_at is not a date']);
+    expect(byJob[id('gone')]!.map(p => p.problem)).toEqual(['no matching role']);
   });
 });
 

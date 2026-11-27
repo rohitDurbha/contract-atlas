@@ -126,6 +126,38 @@ export async function pendingEmbeddings(db: Database, model: string = EMBEDDING_
   return out;
 }
 
+export interface EmbeddingProblem { jobId: string; problem: string }
+
+// Stored vectors must come from the model the site embeds queries with and
+// have its size, or semantic search would compare vectors of different
+// models or throw on a size mismatch. Vectors are saved at unit length, so a
+// length far from one means the blob was damaged. A snapshot without the
+// table has no problems, since search then falls back to keywords.
+export async function embeddingProblems(db: Database, model: { name: string; dimensions: number } = EMBEDDING_MODEL): Promise<EmbeddingProblem[]> {
+  const table = await db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='job_embeddings'").first();
+  if (!table) return [];
+  const rows = (await db.prepare('SELECT e.*, j.id AS role FROM job_embeddings e LEFT JOIN jobs j ON j.id=e.job_id ORDER BY e.job_id').all<any>()).results;
+  const out: EmbeddingProblem[] = [];
+  for (const r of rows) {
+    const add = (problem: string) => out.push({ jobId: r.job_id, problem });
+    if (r.role == null) add('no matching role');
+    if (r.model !== model.name) add(`model ${JSON.stringify(r.model)} is not ${model.name}`);
+    if (r.dimensions !== model.dimensions) add(`dimensions ${r.dimensions} is not ${model.dimensions}`);
+    if (!/^[0-9a-f]{64}$/.test(r.input_hash ?? '')) add('input hash is not a sha256 hex digest');
+    if (Number.isNaN(Date.parse(r.embedded_at ?? ''))) add('embedded_at is not a date');
+    const blob = r.vector instanceof Uint8Array ? r.vector : null;
+    if (!blob || blob.byteLength !== model.dimensions * 4) {
+      add(`vector holds ${blob ? blob.byteLength / 4 : 0} values, expected ${model.dimensions}`);
+      continue;
+    }
+    const vector = decodeVector(blob);
+    if (vector.some(v => !Number.isFinite(v))) { add('vector has values that are not finite'); continue; }
+    const length = Math.sqrt(dot(vector, vector));
+    if (Math.abs(length - 1) > 1e-3) add(`vector length is ${length.toFixed(4)}, expected 1`);
+  }
+  return out;
+}
+
 // Deletes vectors whose role is no longer in the snapshot.
 export async function pruneEmbeddings(db: Database): Promise<number> {
   const { changes } = await db.prepare('DELETE FROM job_embeddings WHERE job_id NOT IN (SELECT id FROM jobs)').run();

@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { isPayModel } from '../server/pay-model';
 import { duplicateFlagDrift } from '../server/db';
 import { enrichmentProblems } from '../server/enrichment';
+import { EMBEDDING_MODEL, embeddingProblems } from '../server/embeddings';
 import { hasStartupTables, STARTUP_COMPANIES } from '../server/startups/collect';
 const {db,close}=openSQLite(resolve('data/atlas.sqlite'),true);
 try {
@@ -27,6 +28,13 @@ try {
   if(enrichment.length)throw new Error(`Stored enrichment is malformed (${enrichment.length} problems, for example ${enrichment.slice(0,3).map(p=>`${p.jobId} ${p.problem}`).join('; ')}); publishing stopped.`);
   const enriched=await db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table' AND name='job_enrichment'").first<any>();
   console.log(JSON.stringify({enrichment:enriched.n?'valid':'absent',rows:enriched.n?(await db.prepare('SELECT count(*) n FROM job_enrichment').first<any>()).n:0}));
+  // Semantic search compares a query from the bundled model with every
+  // stored vector, so a vector from another model or of another size would
+  // rank roles wrongly or make the search fall back for every visitor.
+  const vectors=await embeddingProblems(db);
+  if(vectors.length)throw new Error(`Stored vectors do not match ${EMBEDDING_MODEL.name} (${vectors.length} problems, for example ${vectors.slice(0,3).map(p=>`${p.jobId} ${p.problem}`).join('; ')}); publishing stopped.`);
+  const embedded=await db.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table' AND name='job_embeddings'").first<any>();
+  console.log(JSON.stringify({embeddings:embedded.n?'valid':'absent',model:EMBEDDING_MODEL.name,dimensions:EMBEDDING_MODEL.dimensions,rows:embedded.n?(await db.prepare('SELECT count(*) n FROM job_embeddings').first<any>()).n:0}));
   const fetcher=freeFetch(db);
   for(const path of ['/api/overview','/api/sources','/api/jobs?q=Data%20Labeling%20Analyst','/api/jobs?page=2','/api/jobs?sort=pay']) {
     const response=await fetcher(new Request('https://atlas.test'+path));if(response.status!==200)throw new Error(`Snapshot verification failed: ${path}`);
